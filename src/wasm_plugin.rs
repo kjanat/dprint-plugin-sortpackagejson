@@ -10,13 +10,14 @@ use crate::configuration::{Configuration, resolve_config};
 /// Versioned schema URL for IDE autocomplete in users' `dprint.json`.
 /// Bare-version GitHub release tag (NO `v-` prefix — enforced by the
 /// release workflow's tag-format gate).
-const SCHEMA_URL: &str = const_format::concatcp!(
-    "https://github.com/kjanat/dprint-plugin-sortpackagejson/releases/download/",
+const SCHEMA_URL: &str = concat!(
+    env!("CARGO_PKG_REPOSITORY"),
+    "/releases/download/",
     env!("CARGO_PKG_VERSION"),
-    "/schema.json"
+    "/schema.json",
 );
 
-const HELP_URL: &str = "https://github.com/kjanat/dprint-plugin-sortpackagejson";
+const HELP_URL: &str = env!("CARGO_PKG_REPOSITORY");
 
 struct SortPackageJsonPluginHandler;
 
