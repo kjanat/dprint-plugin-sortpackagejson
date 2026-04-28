@@ -2,7 +2,7 @@
 name        = "dprint-plugin-sortpackagejson"
 version     = "0.1.0"
 edition     = "2024"
-description = "TODO"
+description = "dprint plugin that sorts package.json keys, porting the npm sort-package-json algorithm to native Rust/WASM."
 readme      = "README.md"
 repository  = "https://github.com/kjanat/dprint-plugin-sortpackagejson"
 license     = "MIT"
@@ -23,6 +23,12 @@ dprint-core  = { version = "0.67", features = ["wasm"] }
 schemars     = { version = "1", optional = true }
 serde        = { version = "1", features = ["derive"] }
 serde_json   = { version = "1", features = ["preserve_order"] }
+
+[features]
+# Off by default: schemars is only needed by `examples/gen_schema.rs` and
+# the `tests/schema_in_sync.rs` drift check. Keeping it gated keeps the
+# wasm artifact minimal.
+schema = ["dep:schemars"]
 
 # Size-optimized profile for the published wasm artifact.
 # Inherits from `release` and adds aggressive size reductions: opt-level "z", fat LTO,

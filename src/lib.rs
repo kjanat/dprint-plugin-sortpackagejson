@@ -1,14 +1,8 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+pub mod configuration;
+mod format_text;
+mod sort;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub use format_text::format_text;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+#[cfg(target_arch = "wasm32")]
+mod wasm_plugin;
