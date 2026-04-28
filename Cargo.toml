@@ -1,0 +1,39 @@
+[package]
+name        = "dprint-plugin-sortpackagejson"
+version     = "0.1.0"
+edition     = "2024"
+description = "TODO"
+readme      = "README.md"
+repository  = "https://github.com/kjanat/dprint-plugin-sortpackagejson"
+license     = "MIT"
+keywords    = ["dprint", "formatter", "javascript", "wasm"]
+categories  = ["development-tools", "text-editors"]
+publish     = false
+autobins    = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name       = "dprint_plugin_sortpackagejson"
+path       = "src/lib.rs"
+
+[dependencies]
+anyhow       = "1"
+const_format = "0.2"
+dprint-core  = { version = "0.67", features = ["wasm"] }
+schemars     = { version = "1", optional = true }
+serde        = { version = "1", features = ["derive"] }
+serde_json   = { version = "1", features = ["preserve_order"] }
+
+# Size-optimized profile for the published wasm artifact.
+# Inherits from `release` and adds aggressive size reductions: opt-level "z", fat LTO,
+# single codegen unit, panic = abort (no unwind tables), and symbol strip.
+# Compile time increases significantly; runtime perf is slightly traded off
+# for the smaller binary, which matters more for a dprint plugin
+# (cold-load cost dominates over steady-state throughput).
+[profile.wasm-release]
+inherits      = "release"
+opt-level     = "z"
+strip         = true
+lto           = "fat"
+panic         = "abort"
+codegen-units = 1
