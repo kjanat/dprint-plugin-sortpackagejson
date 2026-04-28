@@ -49,7 +49,10 @@ impl SyncPluginHandler<Configuration> for SortPackageJsonPluginHandler {
                 env!("CARGO_PKG_REPOSITORY").trim_start_matches("https://github.com/"),
                 env!("CARGO_PKG_VERSION"),
             ),
-            update_url: None,
+            update_url: Some(format!(
+                "https://plugins.dprint.dev/{}/latest.json",
+                env!("CARGO_PKG_REPOSITORY").trim_start_matches("https://github.com/"),
+            )),
         }
     }
 
