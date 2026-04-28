@@ -7,16 +7,6 @@ use dprint_core::plugins::{
 
 use crate::configuration::{Configuration, resolve_config};
 
-/// Versioned schema URL for IDE autocomplete in users' `dprint.json`.
-/// Bare-version GitHub release tag (NO `v-` prefix — enforced by the
-/// release workflow's tag-format gate).
-const SCHEMA_URL: &str = concat!(
-    env!("CARGO_PKG_REPOSITORY"),
-    "/releases/download/",
-    env!("CARGO_PKG_VERSION"),
-    "/schema.json",
-);
-
 const HELP_URL: &str = env!("CARGO_PKG_REPOSITORY");
 
 struct SortPackageJsonPluginHandler;
@@ -54,7 +44,11 @@ impl SyncPluginHandler<Configuration> for SortPackageJsonPluginHandler {
             version: env!("CARGO_PKG_VERSION").to_string(),
             config_key: "sortPackageJson".to_string(),
             help_url: HELP_URL.to_string(),
-            config_schema_url: SCHEMA_URL.to_string(),
+            config_schema_url: format!(
+                "https://plugins.dprint.dev/{}/{}/schema.json",
+                env!("CARGO_PKG_REPOSITORY").trim_start_matches("https://github.com/"),
+                env!("CARGO_PKG_VERSION"),
+            ),
             update_url: None,
         }
     }
