@@ -16,12 +16,11 @@ default:
 # Build / test / lint
 # ---------------------------------------------------------------------------
 
-# Native debug build of the lib + cli bin.
-build:
-    cargo build --features cli
+# Build the artifacts this repo publishes: plugin.wasm + schema.json.
+build: wasm schema
 
-# Build the cli bin in release mode.
-build-cli:
+# Build the local sortpkg CLI binary (release).
+cli:
     cargo build --release --features cli --bin sortpkg
 
 # Run all unit + integration tests.
@@ -33,12 +32,15 @@ test-lib:
     cargo test --lib
 
 # Format Rust sources.
+# Uses nightly rustfmt for unstable imports_granularity + group_imports
+
+# in rustfmt.toml. Install: rustup toolchain install nightly --component rustfmt.
 fmt:
-    cargo fmt --all
+    cargo +nightly fmt --all
 
 # Verify formatting without writing.
 fmt-check:
-    cargo fmt --all -- --check
+    cargo +nightly fmt --all -- --check
 
 # Lint with clippy at the same strictness CI uses.
 clippy:
@@ -46,7 +48,7 @@ clippy:
 
 # Auto-fix as much as possible (formatting + clippy --fix).
 fix:
-    cargo fmt --all
+    cargo +nightly fmt --all
     cargo clippy --all-targets --all-features --workspace --fix --allow-dirty -- -D clippy::all
 
 # All quality gates: format check + clippy + tests.
@@ -82,15 +84,15 @@ wasm:
     rustup target add wasm32-unknown-unknown
     cargo build --target wasm32-unknown-unknown --profile wasm-release --no-default-features
 
-# Run wasm-opt -Oz -- requires `wasm-opt` on PATH (binaryen).
-wasm-opt: wasm
-    wasm-opt -Oz --strip-debug --strip-producers \
-        -o {{ WASM_TARGET }} {{ WASM_TARGET }}
-    @ls -lh {{ WASM_TARGET }}
-
-# Print the size of the optimized wasm artifact.
-wasm-size: wasm-opt
+# Print the size of the wasm artifact.
+wasm-size: wasm
     @ls -lh {{ WASM_TARGET }} | awk '{print $5, $9}'
+
+# Stage release artifacts: plugin.wasm + schema.json + .sha256 sidecars at repo root.
+package: wasm schema
+    cp {{ WASM_TARGET }} plugin.wasm
+    sha256sum plugin.wasm | tee plugin.wasm.sha256
+    sha256sum schema.json | tee schema.json.sha256
 
 # ---------------------------------------------------------------------------
 # Schema generation (Stage 8 wiring)
@@ -98,7 +100,11 @@ wasm-size: wasm-opt
 
 # Regenerate schema.json from the Configuration struct.
 schema:
-    cargo run --features schema --example gen_schema > schema.json
+    cargo run --features schema --bin gen_schema > schema.json
+
+# Verify schema.json is in sync with the Configuration struct (drift gate).
+schema-check:
+    cargo test --features schema --test schema_in_sync
 
 # ---------------------------------------------------------------------------
 # CodeRabbit review helpers

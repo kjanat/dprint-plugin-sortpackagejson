@@ -20,17 +20,21 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt
+          components: clippy
           targets: wasm32-unknown-unknown
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@just
       - name: fmt
-        run: cargo fmt --all -- --check
+        run: just fmt-check
       - name: clippy
-        run: cargo clippy --all-targets --all-features --workspace -- -D clippy::all
+        run: just clippy
       - name: test
-        run: cargo test --all-features
+        run: just test
       - name: wasm build
-        run: cargo build --target wasm32-unknown-unknown --profile wasm-release --no-default-features
+        run: just wasm
 
   schema-drift:
     name: schema drift
@@ -39,5 +43,6 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@just
       - name: schema_in_sync test
-        run: cargo test --features schema --test schema_in_sync
+        run: just schema-check

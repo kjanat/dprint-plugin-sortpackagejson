@@ -18,13 +18,14 @@
 //!
 //! Not included in the wasm artifact (gated behind `cli` feature).
 
-use std::io::{Read, Write};
-use std::path::PathBuf;
-use std::process::ExitCode;
+use std::{
+    io::{Read, Write},
+    path::PathBuf,
+    process::ExitCode,
+};
 
 use anyhow::{Context, Result, anyhow};
-use dprint_plugin_sortpackagejson::configuration::Configuration;
-use dprint_plugin_sortpackagejson::format_text;
+use dprint_plugin_sortpackagejson::{configuration::Configuration, format_text};
 
 fn main() -> ExitCode {
     match run() {

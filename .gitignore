@@ -2,3 +2,6 @@ target/
 dprint/
 node_modules/
 bun.lock
+*.wasm
+*.sha256
+schema.json

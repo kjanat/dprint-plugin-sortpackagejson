@@ -9,8 +9,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  WASM_PROFILE_DIR: target/wasm32-unknown-unknown/wasm-release
-  WASM_FILE: dprint_plugin_sortpackagejson.wasm
 
 permissions:
   contents: write
@@ -40,39 +38,13 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@just
 
-      - name: install binaryen (wasm-opt)
-        run: |
-          set -euo pipefail
-          BINARYEN_VERSION=version_119
-          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_VERSION}/binaryen-${BINARYEN_VERSION}-x86_64-linux.tar.gz" \
-            | tar -xz -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/binaryen-${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+      - name: schema drift (safety net)
+        run: just schema-check
 
-      - name: schema regen (safety net)
-        run: cargo run --features schema --example gen_schema > schema.json.regen
-      - name: schema drift check
-        run: diff schema.json schema.json.regen
-
-      - name: wasm build
-        run: cargo build --target wasm32-unknown-unknown --profile wasm-release --no-default-features
-
-      - name: wasm-opt
-        run: |
-          set -euo pipefail
-          wasm-opt -Oz --strip-debug --strip-producers \
-            -o "${WASM_PROFILE_DIR}/${WASM_FILE}.opt" \
-            "${WASM_PROFILE_DIR}/${WASM_FILE}"
-          mv "${WASM_PROFILE_DIR}/${WASM_FILE}.opt" "${WASM_PROFILE_DIR}/${WASM_FILE}"
-          ls -lh "${WASM_PROFILE_DIR}/${WASM_FILE}"
-
-      - name: rename for upload
-        run: cp "${WASM_PROFILE_DIR}/${WASM_FILE}" plugin.wasm
-
-      - name: sha256
-        run: |
-          sha256sum plugin.wasm | tee plugin.wasm.sha256
-          sha256sum schema.json   | tee schema.json.sha256
+      - name: package release artifacts
+        run: just package
 
       - name: release
         uses: softprops/action-gh-release@v3

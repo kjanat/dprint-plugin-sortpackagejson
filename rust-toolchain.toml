@@ -1,4 +1,8 @@
 [toolchain]
+# Stable is the build/test/clippy channel. The `fmt` recipe uses
+# `cargo +nightly fmt` because rustfmt.toml relies on unstable options
+# (`imports_granularity`, `group_imports`) — install nightly via:
+#   rustup toolchain install nightly --component rustfmt
 channel    = "stable"
 components = ["clippy", "rustfmt"]
 targets    = ["wasm32-unknown-unknown"]

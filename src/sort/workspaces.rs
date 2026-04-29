@@ -10,8 +10,10 @@
 
 use serde_json::{Map, Value};
 
-use super::dependencies::sort_dependencies;
-use super::helpers::{dedupe_sort_string_array, sort_object_by_keys};
+use super::{
+    dependencies::sort_dependencies,
+    helpers::{dedupe_sort_string_array, sort_object_by_keys},
+};
 use crate::configuration::Configuration;
 
 const WORKSPACES_ORDER: &[&str] = &["packages", "catalog"];

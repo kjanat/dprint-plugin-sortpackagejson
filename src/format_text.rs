@@ -4,8 +4,7 @@ use anyhow::{Context, Result};
 use dprint_core::configuration::NewLineKind;
 use serde_json::{Serializer, Value, ser::PrettyFormatter};
 
-use crate::configuration::Configuration;
-use crate::sort::sort_package_json;
+use crate::{configuration::Configuration, sort::sort_package_json};
 
 /// Format a `package.json`: parse, sort top-level keys, re-emit using the
 /// resolved indent / newline settings. Returns `Ok(None)` when the input is

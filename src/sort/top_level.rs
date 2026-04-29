@@ -2,9 +2,8 @@ use std::collections::HashSet;
 
 use serde_json::{Map, Value};
 
-use crate::configuration::{Configuration, UnknownKeyPolicy};
-
 use super::canonical::CANONICAL_ORDER;
+use crate::configuration::{Configuration, UnknownKeyPolicy};
 
 /// Pipeline pass: top-level reorder. Always runs (no gate); first stop in
 /// the pipeline so subsequent passes operate on canonically-keyed input.

@@ -1,8 +1,11 @@
-use dprint_core::configuration::{ConfigKeyMap, GlobalConfiguration};
-use dprint_core::generate_plugin_code;
-use dprint_core::plugins::{
-    CheckConfigUpdatesMessage, ConfigChange, FileMatchingInfo, FormatResult, PluginInfo,
-    PluginResolveConfigurationResult, SyncFormatRequest, SyncHostFormatRequest, SyncPluginHandler,
+use dprint_core::{
+    configuration::{ConfigKeyMap, GlobalConfiguration},
+    generate_plugin_code,
+    plugins::{
+        CheckConfigUpdatesMessage, ConfigChange, FileMatchingInfo, FormatResult, PluginInfo,
+        PluginResolveConfigurationResult, SyncFormatRequest, SyncHostFormatRequest,
+        SyncPluginHandler,
+    },
 };
 
 use crate::configuration::{Configuration, resolve_config};

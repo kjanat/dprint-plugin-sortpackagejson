@@ -59,7 +59,7 @@ just            # list recipes
 just test       # cargo test --all-features
 just clippy     # strict lint
 just ci         # fmt-check + clippy + test
-just wasm-opt   # build + size-optimize the wasm artifact
+just wasm       # build the wasm artifact (wasm-release profile)
 just diff PATH  # diff our output against `bunx sort-package-json`
 ```
 
