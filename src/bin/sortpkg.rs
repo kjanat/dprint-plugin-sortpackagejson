@@ -10,12 +10,6 @@
 //! diff ours.json theirs.json
 //! ```
 //!
-//! Flags:
-//!   --tabs              indent with tabs instead of spaces
-//!   --indent=N          space count for indentation (default 2)
-//!   --check FILE        exit 1 if FILE would change; print diff to stderr
-//!   FILE (positional)   read FILE instead of stdin
-//!
 //! Not included in the wasm artifact (gated behind `cli` feature).
 
 use std::{
@@ -24,11 +18,35 @@ use std::{
     process::ExitCode,
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
+use clap::Parser;
 use dprint_plugin_sortpackagejson::{configuration::Configuration, format_text};
 
+#[derive(Parser)]
+#[command(
+    name = "sortpkg",
+    about = "Sort a package.json. Reads stdin if no FILE is given.",
+    version
+)]
+struct Args {
+    /// Indent with tabs instead of spaces.
+    #[arg(long)]
+    tabs: bool,
+
+    /// Space count for indentation when not using tabs.
+    #[arg(long, default_value_t = 2, value_name = "N")]
+    indent: u8,
+
+    /// Exit 1 (and write a message to stderr) if FILE is not in canonical order.
+    #[arg(long, value_name = "FILE", conflicts_with = "file")]
+    check: Option<PathBuf>,
+
+    /// Read FILE instead of stdin.
+    file: Option<PathBuf>,
+}
+
 fn main() -> ExitCode {
-    match run() {
+    match run(Args::parse()) {
         Ok(code) => code,
         Err(err) => {
             let _ = writeln!(std::io::stderr(), "sortpkg: {err:#}");
@@ -37,43 +55,14 @@ fn main() -> ExitCode {
     }
 }
 
-fn run() -> Result<ExitCode> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let mut use_tabs = false;
-    let mut indent_width: u8 = 2;
-    let mut check_path: Option<PathBuf> = None;
-    let mut input_path: Option<PathBuf> = None;
-    let mut iter = args.into_iter();
-    while let Some(arg) = iter.next() {
-        match arg.as_str() {
-            "--tabs" => use_tabs = true,
-            s if s.starts_with("--indent=") => {
-                indent_width = s["--indent=".len()..]
-                    .parse()
-                    .context("--indent must be a number")?;
-            }
-            "--check" => {
-                let p = iter.next().ok_or_else(|| anyhow!("--check needs a path"))?;
-                check_path = Some(PathBuf::from(p));
-            }
-            "-h" | "--help" => {
-                println!("{}", help());
-                return Ok(ExitCode::SUCCESS);
-            }
-            other if other.starts_with("--") => {
-                return Err(anyhow!("unknown flag: {other}"));
-            }
-            _ => input_path = Some(PathBuf::from(arg)),
-        }
-    }
-
+fn run(args: Args) -> Result<ExitCode> {
     let config = Configuration {
-        use_tabs,
-        indent_width,
+        use_tabs: args.tabs,
+        indent_width: args.indent,
         ..Configuration::default()
     };
 
-    if let Some(path) = check_path {
+    if let Some(path) = args.check {
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("reading {}", path.display()))?;
         return match format_text(&path, &text, &config)? {
@@ -89,7 +78,7 @@ fn run() -> Result<ExitCode> {
         };
     }
 
-    let (text, virtual_path) = match input_path {
+    let (text, virtual_path) = match args.file {
         Some(path) => {
             let t = std::fs::read_to_string(&path)
                 .with_context(|| format!("reading {}", path.display()))?;
@@ -109,11 +98,4 @@ fn run() -> Result<ExitCode> {
     out.write_all(formatted.as_deref().unwrap_or(text.as_str()).as_bytes())
         .context("writing stdout")?;
     Ok(ExitCode::SUCCESS)
-}
-
-fn help() -> &'static str {
-    "sortpkg [--tabs] [--indent=N] [--check FILE] [FILE]\n\
-     \n\
-     Sort a package.json. Reads stdin if no FILE is given.\n\
-     Writes sorted output to stdout, or exit 1 with --check when changes are needed."
 }
