@@ -8,12 +8,16 @@ alphabetized, exports/conditions ordered correctly, and the rest.
 
 ## Install
 
-In your `dprint.json`:
+```sh
+dprint add kjanat/sortpackagejson
+```
+
+Or manually in your `dprint.json`:
 
 ```json
 {
 	"plugins": [
-		"https://github.com/kjanat/dprint-plugin-sortpackagejson/releases/download/0.1.0/plugin.wasm"
+		"https://plugins.dprint.dev/kjanat/sortpackagejson-x.y.z.wasm"
 	],
 	"sortPackageJson": {}
 }
@@ -33,7 +37,7 @@ else stays with `dprint-plugin-json`.
 | `unknownKeys`      | `"alphabetical" \| "preserve"` | `"alphabetical"` | How to order top-level keys not present in the canonical list.                                      |
 
 The IDE-autocomplete schema for these options lives at
-[`schema.json`](https://github.com/kjanat/dprint-plugin-sortpackagejson/releases/download/0.1.0/schema.json)
+[`schema.json`](https://github.com/kjanat/dprint-plugin-sortpackagejson/releases/latest/download/schema.json)
 and is regenerated from the Rust `Configuration` struct via `schemars`;
 drift is enforced by `tests/schema_in_sync.rs`.
 
@@ -77,7 +81,6 @@ workflow rejects `v0.1.0`-style tags. Each release publishes:
 
 - `plugin.wasm` — the size-optimized plugin artifact
 - `schema.json` — JSON Schema for the plugin's config block
-- `*.sha256` — checksums for both
 
 ## Credits
 

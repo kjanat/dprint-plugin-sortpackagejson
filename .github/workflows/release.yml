@@ -1,16 +1,7 @@
 name: release
-
-on:
-  push:
-    tags:
-      - "[0-9]+.[0-9]+.[0-9]+"
-
-env:
-  CARGO_TERM_COLOR: always
-
-permissions:
-  contents: write
-
+on: { push: { tags: ["[0-9]+.[0-9]+.[0-9]+"] } }
+env: { CARGO_TERM_COLOR: always }
+permissions: { contents: write }
 jobs:
   build:
     name: build + upload
@@ -19,23 +10,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
+        with: { targets: wasm32-unknown-unknown }
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@just
-
       - name: schema drift (safety net)
         run: just schema-check
-
       - name: package release artifacts
         run: just package
-
       - name: release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           files: |
             plugin.wasm
-            plugin.wasm.sha256
             schema.json
-            schema.json.sha256
