@@ -56,7 +56,7 @@ fn serialize_pretty(value: &Value, config: &Configuration) -> Result<String> {
     let formatter = PrettyFormatter::with_indent(&indent);
     let mut ser = Serializer::with_formatter(&mut buf, formatter);
     serde::Serialize::serialize(value, &mut ser).context("serializing JSON")?;
-    Ok(String::from_utf8(buf).context("UTF-8 from serializer")?)
+    String::from_utf8(buf).context("UTF-8 from serializer")
 }
 
 fn resolve_newline(kind: NewLineKind, file_text: &str) -> &'static str {

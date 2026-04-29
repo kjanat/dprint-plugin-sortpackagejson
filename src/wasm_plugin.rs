@@ -67,6 +67,10 @@ impl SyncPluginHandler<Configuration> for SortPackageJsonPluginHandler {
         request: SyncFormatRequest<Configuration>,
         _format_with_host: impl FnMut(SyncHostFormatRequest) -> FormatResult,
     ) -> FormatResult {
+        // Sorting needs the whole document; partial-range format is meaningless.
+        if request.range.is_some() {
+            return Ok(None);
+        }
         let file_text = String::from_utf8(request.file_bytes)?;
         crate::format_text(request.file_path, &file_text, request.config)
             .map(|maybe_text| maybe_text.map(|t| t.into_bytes()))
