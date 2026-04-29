@@ -1,3 +1,6 @@
+# This workflow runs on pushes to master and on pull requests.
+# It checks formatting, lints, runs tests, builds the WebAssembly target, and
+# checks the schema.
 ---
 name: ci
 on: { push: { branches: [master] }, pull_request: }
@@ -12,10 +15,16 @@ jobs:
         with: { components: clippy, targets: wasm32-unknown-unknown }
       - uses: dtolnay/rust-toolchain@nightly
         with: { components: rustfmt }
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: latest }
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@just
       - run: just fmt-check
       - run: just clippy
       - run: just test
       - run: just wasm
+      - run: bun install
+        working-directory: deployment/npm
+      - run: bun run test
+        working-directory: deployment/npm
       - run: just schema-check

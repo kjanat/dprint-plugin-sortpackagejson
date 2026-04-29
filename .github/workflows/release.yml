@@ -14,14 +14,12 @@ jobs:
         with: { targets: wasm32-unknown-unknown }
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@just
-      - name: schema drift (safety net)
-        run: just schema-check
-      - name: package release artifacts
-        run: just package
-      - name: release
-        uses: softprops/action-gh-release@v3
+      - run: just schema-check
+      - run: just package
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           files: |
             plugin.wasm
             schema.json
+      - uses: ./.github/workflows/publish.yml

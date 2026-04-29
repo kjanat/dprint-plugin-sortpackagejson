@@ -490,7 +490,7 @@ impl Span {
         self.end - self.start
     }
 
-    fn slice<'a>(self, file_text: &'a str) -> &'a str {
+    fn slice(self, file_text: &str) -> &str {
         &file_text[self.start..self.end]
     }
 }

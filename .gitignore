@@ -1,5 +1,7 @@
 target/
+tmp/
 dprint/
+dist/
 node_modules/
 bun.lock
 *.wasm

@@ -1,0 +1,45 @@
+{
+	"name": "@kjanat/dprint-plugin-sortpackagejson",
+	"version": "0.1.0",
+	"description": "Wasm module for dprint-plugin-sortpackagejson.",
+	"keywords": [
+		"package-json",
+		"code",
+		"formatter",
+		"dprint"
+	],
+	"homepage": "https://github.com/kjanat/dprint-plugin-sortpackagejson#readme",
+	"bugs": {
+		"url": "https://github.com/kjanat/dprint-plugin-sortpackagejson/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kjanat/dprint-plugin-sortpackagejson.git",
+		"directory": "deployment/npm"
+	},
+	"license": "MIT",
+	"type": "module",
+	"exports": {
+		".": "./dist/index.mjs",
+		"./package.json": "./package.json",
+		"./wasm": "./dist/plugin.wasm"
+	},
+	"types": "./dist/index.d.mts",
+	"files": [
+		"dist/",
+		"LICENSE",
+		"README.md"
+	],
+	"scripts": {
+		"bd": "bun run build",
+		"build": "tsdown",
+		"prepack": "bun run build && bun src/setup.ts sync-version",
+		"test": "bun test"
+	},
+	"devDependencies": {
+		"@dprint/formatter": "~0.4.0",
+		"@types/bun": "^1.3.13",
+		"tsdown": "^0.22.0-beta.1",
+		"typescript": "^6"
+	}
+}

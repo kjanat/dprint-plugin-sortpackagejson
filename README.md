@@ -12,19 +12,37 @@ alphabetized, exports/conditions ordered correctly, and the rest.
 dprint add kjanat/sortpackagejson
 ```
 
+Or install from npm:
+
+```sh
+npm install @kjanat/dprint-plugin-sortpackagejson
+```
+
+Then reference the packaged wasm file in `dprint.json`:
+
+```jsonc
+{
+  "plugins": [
+    "./node_modules/@kjanat/dprint-plugin-sortpackagejson/plugin.wasm",
+  ],
+  "sortPackageJson": {},
+}
+```
+
 Or manually in your `dprint.json`:
 
-```json
+```jsonc
 {
-	"plugins": [
-		"https://plugins.dprint.dev/kjanat/sortpackagejson-x.y.z.wasm"
-	],
-	"sortPackageJson": {}
+  "plugins": ["https://plugins.dprint.dev/kjanat/sortpackagejson-x.y.z.wasm"],
+  "sortPackageJson": {},
 }
 ```
 
 The plugin only formats files literally named `package.json`; everything
 else stays with `dprint-plugin-json`.
+
+Programmatic consumers can resolve the wasm path via
+`require("@kjanat/dprint-plugin-sortpackagejson").getPath()`.
 
 ## Configuration
 
@@ -64,6 +82,7 @@ just test       # cargo test --all-features
 just clippy     # strict lint
 just ci         # fmt-check + clippy + test
 just wasm       # build the wasm artifact (wasm-release profile)
+(cd deployment/npm && bun install && bun run test)  # Bun smoke test
 just diff PATH  # diff our output against `bunx sort-package-json`
 ```
 

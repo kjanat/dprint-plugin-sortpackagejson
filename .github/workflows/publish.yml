@@ -1,0 +1,30 @@
+# This workflow is triggered when a new tag is pushed that matches the pattern
+# of a semantic version (e.g., 1.0.0).
+# It builds the project, runs tests, and publishes the package to npm if all
+# steps succeed.
+---
+name: publish
+on:
+  workflow_call:
+  workflow_dispatch:
+  push: { tags: ["[0-9]+.[0-9]+.[0-9]+"] }
+env: { CARGO_TERM_COLOR: always }
+permissions: { contents: read, id-token: write }
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: wasm32-unknown-unknown }
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: latest }
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@just
+      - run: just wasm
+      - run: bun install
+        working-directory: deployment/npm
+      - run: bun run test
+        working-directory: deployment/npm
+      - run: bun publish --access public
+        working-directory: deployment/npm
