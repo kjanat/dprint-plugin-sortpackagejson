@@ -17,6 +17,7 @@ jobs:
         with: { bun-version: latest }
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@just
+      - uses: kjanat/install-dprint@v1
       - run: just fmt-check
       - run: just clippy
       - run: just test

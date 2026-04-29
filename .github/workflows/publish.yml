@@ -23,6 +23,7 @@ jobs:
         with: { targets: wasm32-unknown-unknown }
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: latest }
+      - uses: kjanat/install-dprint@v1
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@just
       - run: bun install

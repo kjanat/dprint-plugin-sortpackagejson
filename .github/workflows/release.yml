@@ -14,6 +14,7 @@ jobs:
         with: { targets: wasm32-unknown-unknown }
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@just
+      - uses: kjanat/install-dprint@v1
       - run: just schema-check
       - run: just package
       - uses: softprops/action-gh-release@v3
