@@ -71,12 +71,17 @@ fn schema_matches_published_latest() {
     };
 
     let generated = generate_schema();
-    if generated != published {
+    let normalized_generated = normalize_schema(&generated);
+    let normalized_published = normalize_schema(&published);
+    if normalized_generated != normalized_published {
+        let generated_pretty = format_normalized_schema(&normalized_generated);
+        let published_pretty = format_normalized_schema(&normalized_published);
+        let diff = diff_lines(&published_pretty, &generated_pretty);
         panic!(
-            "schema for current code differs from published v{}.\n  \
-             URL:  {schema_url}\n  \
-             Bump CARGO_PKG_VERSION before merging this schema change so the \
-             new schema lives at a new URL.",
+            "schema for current code differs from published v{}.\n\
+             URL:  {schema_url}\n\
+             Diff (-published, +generated):\n\n```diff\n{diff}```\n\n\
+             Bump CARGO_PKG_VERSION before merging this schema change so the new schema lives at a new URL.",
             latest.version,
         );
     }
@@ -114,4 +119,69 @@ fn generate_schema() -> String {
         s.push('\n');
     }
     s
+}
+
+fn normalize_schema(schema: &str) -> Value {
+    let mut value: Value = serde_json::from_str(schema).expect("schema json parses");
+    strip_non_semantic_fields(&mut value);
+    value
+}
+
+fn strip_non_semantic_fields(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            map.remove("$id");
+            for value in map.values_mut() {
+                strip_non_semantic_fields(value);
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                strip_non_semantic_fields(value);
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
+fn format_normalized_schema(value: &Value) -> String {
+    serde_json::to_string_pretty(value).expect("normalized schema serializes")
+}
+
+fn diff_lines(old: &str, new: &str) -> String {
+    let old_lines: Vec<&str> = old.lines().collect();
+    let new_lines: Vec<&str> = new.lines().collect();
+    let max_len = old_lines.len().max(new_lines.len());
+    let mut out = String::new();
+
+    for i in 0..max_len {
+        match (old_lines.get(i), new_lines.get(i)) {
+            (Some(old_line), Some(new_line)) if old_line == new_line => {
+                out.push(' ');
+                out.push_str(old_line);
+                out.push('\n');
+            }
+            (Some(old_line), Some(new_line)) => {
+                out.push('-');
+                out.push_str(old_line);
+                out.push('\n');
+                out.push('+');
+                out.push_str(new_line);
+                out.push('\n');
+            }
+            (Some(old_line), None) => {
+                out.push('-');
+                out.push_str(old_line);
+                out.push('\n');
+            }
+            (None, Some(new_line)) => {
+                out.push('+');
+                out.push_str(new_line);
+                out.push('\n');
+            }
+            (None, None) => {}
+        }
+    }
+
+    out
 }

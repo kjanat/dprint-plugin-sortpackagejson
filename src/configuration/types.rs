@@ -1,10 +1,11 @@
 use dprint_core::configuration::NewLineKind;
 use serde::{Deserialize, Serialize};
 
-/// # [dprint-plugin-sortpackagejson]
+/// # dprint-plugin-sortpackagejson
 ///
-/// Plugin configuration. Mirrors options exposed by the npm
-/// [`sort-package-json`] package, with dprint-style camelCase keys.
+/// [dprint-plugin-sortpackagejson] plugin configuration.
+/// Mirrors options exposed by the npm [`sort-package-json`] package,
+/// with dprint-style camelCase keys.
 ///
 /// The `use_tabs`, `indent_width`, `new_line_kind`, and `line_width` fields
 /// are resolved from dprint's global config by `resolve_config` and are
