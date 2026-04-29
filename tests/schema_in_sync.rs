@@ -13,14 +13,13 @@ use std::time::Duration;
 
 use dprint_plugin_sortpackagejson::configuration::Configuration;
 use serde::{Deserialize, Serialize};
-use serde_json::ser::{PrettyFormatter, Serializer};
+use serde_json::{
+    Value,
+    ser::{PrettyFormatter, Serializer},
+};
 
 const REPO_PATH: &str = "kjanat/dprint-plugin-sortpackagejson";
-const LATEST_URL: &str = concat!(
-    "https://plugins.dprint.dev/",
-    "kjanat/dprint-plugin-sortpackagejson",
-    "/latest.json",
-);
+const PLUGINS_BASE_URL: &str = "https://plugins.dprint.dev";
 
 #[derive(Deserialize)]
 struct Latest {
@@ -32,8 +31,9 @@ fn schema_matches_published_latest() {
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(5))
         .build();
+    let latest_url = format!("{PLUGINS_BASE_URL}/{REPO_PATH}/latest.json");
 
-    let latest: Latest = match agent.get(LATEST_URL).call() {
+    let latest: Latest = match agent.get(&latest_url).call() {
         Ok(r) => match r.into_json() {
             Ok(v) => v,
             Err(e) => {
@@ -42,17 +42,17 @@ fn schema_matches_published_latest() {
             }
         },
         Err(ureq::Error::Status(404, _)) => {
-            eprintln!("skip: no published version yet at {LATEST_URL}");
+            eprintln!("skip: no published version yet at {latest_url}");
             return;
         }
         Err(e) => {
-            eprintln!("skip: network error fetching {LATEST_URL}: {e}");
+            eprintln!("skip: network error fetching {latest_url}: {e}");
             return;
         }
     };
 
     let schema_url = format!(
-        "https://plugins.dprint.dev/{REPO_PATH}/{}/schema.json",
+        "{PLUGINS_BASE_URL}/{REPO_PATH}/{}/schema.json",
         latest.version
     );
 
@@ -84,10 +84,31 @@ fn schema_matches_published_latest() {
 
 fn generate_schema() -> String {
     let schema = schemars::schema_for!(Configuration);
+    let mut value = serde_json::to_value(&schema).expect("schema to value");
+
+    if let Value::Object(map) = value {
+        let id = format!(
+            "https://plugins.dprint.dev/{REPO_PATH}/{}/schema.json",
+            env!("CARGO_PKG_VERSION"),
+        );
+
+        let mut ordered = serde_json::Map::new();
+        if let Some(v) = map.get("$schema").cloned() {
+            ordered.insert("$schema".to_string(), v);
+        }
+        ordered.insert("$id".to_string(), Value::String(id));
+        for (k, v) in map {
+            if k != "$schema" {
+                ordered.insert(k, v);
+            }
+        }
+        value = Value::Object(ordered);
+    }
+
     let mut buf = Vec::new();
     let formatter = PrettyFormatter::with_indent(b"\t");
     let mut ser = Serializer::with_formatter(&mut buf, formatter);
-    schema.serialize(&mut ser).expect("serialize schema");
+    value.serialize(&mut ser).expect("serialize schema");
     let mut s = String::from_utf8(buf).expect("schema is utf-8");
     if !s.ends_with('\n') {
         s.push('\n');

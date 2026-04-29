@@ -1,37 +1,21 @@
+---
 name: ci
-
-on:
-  push:
-    branches: [master]
-  pull_request:
-
-env:
-  CARGO_TERM_COLOR: always
-
-permissions:
-  contents: read
-
+on: { push: { branches: [master] }, pull_request: }
+env: { CARGO_TERM_COLOR: always }
+permissions: { contents: read }
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-          targets: wasm32-unknown-unknown
+        with: { components: clippy, targets: wasm32-unknown-unknown }
       - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt
+        with: { components: rustfmt }
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@just
-      - name: fmt
-        run: just fmt-check
-      - name: clippy
-        run: just clippy
-      - name: test
-        run: just test
-      - name: wasm build
-        run: just wasm
-      - name: schema drift
-        run: just schema-check
+      - run: just fmt-check
+      - run: just clippy
+      - run: just test
+      - run: just wasm
+      - run: just schema-check

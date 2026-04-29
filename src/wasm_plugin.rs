@@ -76,15 +76,33 @@ impl SyncPluginHandler<Configuration> for SortPackageJsonPluginHandler {
     fn format(
         &mut self,
         request: SyncFormatRequest<Configuration>,
-        _format_with_host: impl FnMut(SyncHostFormatRequest) -> FormatResult,
+        mut format_with_host: impl FnMut(SyncHostFormatRequest) -> FormatResult,
     ) -> FormatResult {
         // Sorting needs the whole document; partial-range format is meaningless.
         if request.range.is_some() {
             return Ok(None);
         }
         let file_text = String::from_utf8(request.file_bytes)?;
-        crate::format_text(request.file_path, &file_text, request.config)
-            .map(|maybe_text| maybe_text.map(|t| t.into_bytes()))
+        let host_format_path = request
+            .file_path
+            .with_file_name("sortpackagejson-host.json");
+        let override_config = ConfigKeyMap::new();
+        crate::format_text::format_text_with_host(
+            request.file_path,
+            &file_text,
+            request.config,
+            |text| match format_with_host(SyncHostFormatRequest {
+                file_path: &host_format_path,
+                file_bytes: text.as_bytes(),
+                range: None,
+                override_config: &override_config,
+            }) {
+                Ok(Some(bytes)) => Ok(Some(String::from_utf8(bytes)?)),
+                Ok(None) => Ok(None),
+                Err(err) => Err(err),
+            },
+        )
+        .map(|maybe_text| maybe_text.map(|t| t.into_bytes()))
     }
 }
 
