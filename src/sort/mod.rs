@@ -1,72 +1,47 @@
+//! Composition root for the sort pipeline. Each module under `sort` exposes
+//! a `pass(map, config) -> map` function; this file wires them in execution
+//! order. Adding a new sort rule means: write `pass()` in a new module, list
+//! it in [`PASSES`].
+//!
+//! Each pass self-gates on its relevant `Configuration` flags — top-level
+//! sees the full config, decides whether to act. This keeps the pipeline
+//! mechanical and the pass code self-contained for testing.
+
 mod canonical;
 mod dependencies;
+mod eslint;
+mod exports;
 mod helpers;
 mod nested_alpha;
+mod pnpm;
+mod prettier;
+mod scripts;
 mod top_level;
+mod workspaces;
 
 use serde_json::{Map, Value};
 
 use crate::configuration::Configuration;
 
-/// Top-level entry point: sort a parsed `package.json` object.
-///
-/// Pass 1: reorder top-level keys by canonical / user `sort_order`.
-/// Pass 2: apply per-field transforms (dependency-family alpha sort,
-/// dedupe-and-sort string arrays, deep-sort `*Meta` maps; nested-section
-/// sorts gated by `sort_nested`).
+type Pass = fn(Map<String, Value>, &Configuration) -> Map<String, Value>;
+
+/// Ordered pipeline. Top-level sort must run first so subsequent passes
+/// operate on a canonically-keyed object; the rest are independent and only
+/// touch the keys they own.
+const PASSES: &[Pass] = &[
+    top_level::pass,
+    dependencies::pass,
+    scripts::pass,
+    exports::pass,
+    eslint::pass,
+    prettier::pass,
+    workspaces::pass,
+    pnpm::pass,
+    nested_alpha::pass,
+];
+
+/// Top-level entry point: sort a parsed `package.json` object by running
+/// every pass in [`PASSES`].
 pub fn sort_package_json(input: Map<String, Value>, config: &Configuration) -> Map<String, Value> {
-    let sorted = top_level::sort_top_level(input, config);
-    let after_deps = apply_field_transforms(sorted, config);
-    if config.sort_nested {
-        nested_alpha::apply_nested_sorts(after_deps)
-    } else {
-        after_deps
-    }
-}
-
-fn apply_field_transforms(
-    mut object: Map<String, Value>,
-    config: &Configuration,
-) -> Map<String, Value> {
-    use dependencies::{sort_by_package_ident_deep, sort_dependencies};
-    use helpers::{dedupe_sort_string_array, sort_object_alpha_deep};
-
-    if config.sort_dependencies {
-        // `get_mut` + `mem::take` keeps each key in its canonical position;
-        // `shift_remove` + re-insert would push it to the end of the map.
-        const DEP_OBJECT_KEYS: &[&str] = &[
-            "dependencies",
-            "devDependencies",
-            "peerDependencies",
-            "optionalDependencies",
-            "overrides",
-            "resolutions",
-        ];
-        for key in DEP_OBJECT_KEYS {
-            if let Some(Value::Object(m)) = object.get_mut(*key) {
-                *m = sort_dependencies(std::mem::take(m));
-            }
-        }
-
-        const DEP_ARRAY_KEYS: &[&str] = &[
-            "bundledDependencies",
-            "bundleDependencies",
-            "extensionPack",
-            "extensionDependencies",
-        ];
-        for key in DEP_ARRAY_KEYS {
-            if let Some(Value::Array(a)) = object.get_mut(*key) {
-                *a = dedupe_sort_string_array(std::mem::take(a));
-            }
-        }
-
-        if let Some(Value::Object(m)) = object.get_mut("peerDependenciesMeta") {
-            *m = sort_object_alpha_deep(std::mem::take(m));
-        }
-        if let Some(Value::Object(m)) = object.get_mut("dependenciesMeta") {
-            *m = sort_by_package_ident_deep(std::mem::take(m));
-        }
-    }
-
-    object
+    PASSES.iter().fold(input, |acc, pass| pass(acc, config))
 }

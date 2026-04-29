@@ -9,9 +9,18 @@
 use serde_json::{Map, Value};
 
 use super::helpers::{
-    dedupe_sort_string_array, dedupe_string_array, map_object_array, sort_object_alpha,
-    sort_object_alpha_deep, sort_object_by_keys,
+    dedupe_string_array, map_object_array, sort_object_alpha, sort_object_alpha_deep,
+    sort_object_by_keys,
 };
+use crate::configuration::Configuration;
+
+/// Pipeline pass: nested fixed-order/alpha sorts. Gated by `config.sort_nested`.
+pub fn pass(object: Map<String, Value>, config: &Configuration) -> Map<String, Value> {
+    if !config.sort_nested {
+        return object;
+    }
+    apply_nested_sorts(object)
+}
 
 const URL_OBJECT_ORDER: &[&str] = &["type", "url"];
 const PEOPLE_OBJECT_ORDER: &[&str] = &["name", "email", "url"];
@@ -136,20 +145,6 @@ pub fn apply_nested_sorts(mut object: Map<String, Value>) -> Map<String, Value> 
 
     if let Some(Value::Object(m)) = object.get_mut("oclif") {
         *m = sort_object_alpha_deep(std::mem::take(m));
-    }
-
-    // Upstream applies `uniqAndSortArray` to these even when they live next to
-    // dependency objects, so they get treated here regardless of
-    // `sort_dependencies` (still a no-op when arrays are already sorted).
-    for key in &[
-        "bundledDependencies",
-        "bundleDependencies",
-        "extensionPack",
-        "extensionDependencies",
-    ] {
-        if let Some(Value::Array(a)) = object.get_mut(*key) {
-            *a = dedupe_sort_string_array(std::mem::take(a));
-        }
     }
 
     object

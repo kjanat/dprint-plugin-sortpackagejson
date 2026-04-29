@@ -55,6 +55,8 @@ pub fn resolve_config(
                 .unwrap_or(RECOMMENDED_GLOBAL_CONFIGURATION.use_tabs),
             &mut diagnostics,
         ),
+        // package.json universally uses 2-space indent — RECOMMENDED's 4 is
+        // a poor default here, so we override only when global is unset.
         indent_width: get_value(
             &mut config,
             "indentWidth",

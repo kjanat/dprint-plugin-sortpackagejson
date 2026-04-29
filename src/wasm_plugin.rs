@@ -9,6 +9,14 @@ use crate::configuration::{Configuration, resolve_config};
 
 const HELP_URL: &str = env!("CARGO_PKG_REPOSITORY");
 
+/// Strip the `https://github.com/` prefix from `CARGO_PKG_REPOSITORY` to
+/// yield `<owner>/<repo>` for the dprint plugin registry URLs. GitHub-only
+/// by convention — fork hosts (GitLab, self-hosted) need a different
+/// derivation.
+fn repo_path() -> &'static str {
+    env!("CARGO_PKG_REPOSITORY").trim_start_matches("https://github.com/")
+}
+
 struct SortPackageJsonPluginHandler;
 
 impl SyncPluginHandler<Configuration> for SortPackageJsonPluginHandler {
@@ -46,12 +54,12 @@ impl SyncPluginHandler<Configuration> for SortPackageJsonPluginHandler {
             help_url: HELP_URL.to_string(),
             config_schema_url: format!(
                 "https://plugins.dprint.dev/{}/{}/schema.json",
-                env!("CARGO_PKG_REPOSITORY").trim_start_matches("https://github.com/"),
+                repo_path(),
                 env!("CARGO_PKG_VERSION"),
             ),
             update_url: Some(format!(
                 "https://plugins.dprint.dev/{}/latest.json",
-                env!("CARGO_PKG_REPOSITORY").trim_start_matches("https://github.com/"),
+                repo_path(),
             )),
         }
     }

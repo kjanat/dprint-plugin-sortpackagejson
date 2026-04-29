@@ -12,11 +12,20 @@ pub fn sort_object_alpha(map: Map<String, Value>) -> Map<String, Value> {
 /// Reorder an object: listed keys first (in given order), unknowns alpha after.
 /// Mirrors upstream `sortObjectKeys(obj, [keys...])`.
 pub fn sort_object_by_keys(map: Map<String, Value>, order: &[&str]) -> Map<String, Value> {
+    sort_object_by_keys_iter(map, order.iter().copied())
+}
+
+/// Like [`sort_object_by_keys`] but accepts any iterator of borrowed `&str`,
+/// useful when the order is computed at runtime (`Vec<String>`).
+pub fn sort_object_by_keys_iter<'a, I>(map: Map<String, Value>, order: I) -> Map<String, Value>
+where
+    I: IntoIterator<Item = &'a str>,
+{
     let mut object = map;
     let mut out = Map::with_capacity(object.len());
     for key in order {
-        if let Some(value) = object.shift_remove(*key) {
-            out.insert((*key).to_string(), value);
+        if let Some(value) = object.shift_remove(key) {
+            out.insert(key.to_string(), value);
         }
     }
     let mut rest: Vec<(String, Value)> = object.into_iter().collect();

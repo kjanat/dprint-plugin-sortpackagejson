@@ -6,6 +6,12 @@ use crate::configuration::{Configuration, UnknownKeyPolicy};
 
 use super::canonical::CANONICAL_ORDER;
 
+/// Pipeline pass: top-level reorder. Always runs (no gate); first stop in
+/// the pipeline so subsequent passes operate on canonically-keyed input.
+pub fn pass(input: Map<String, Value>, config: &Configuration) -> Map<String, Value> {
+    sort_top_level(input, config)
+}
+
 /// Reorder a `package.json` object's top-level keys.
 ///
 /// Algorithm (mirroring upstream `sort-package-json`):

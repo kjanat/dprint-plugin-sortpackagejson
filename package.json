@@ -1,5 +1,4 @@
 {
-	"dependencies": {},
 	"devDependencies": {
 		"sort-package-json": "3.6.1"
 	}

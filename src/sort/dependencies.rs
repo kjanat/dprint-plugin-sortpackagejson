@@ -1,6 +1,52 @@
 use serde_json::{Map, Value};
 
-use super::helpers::{sort_object_alpha, sort_object_alpha_deep};
+use super::helpers::{dedupe_sort_string_array, sort_object_alpha, sort_object_alpha_deep};
+use crate::configuration::Configuration;
+
+/// Pipeline pass: dependency-family alpha + uniq-and-sort + meta deep sort.
+/// Gated by `config.sort_dependencies`.
+pub fn pass(mut object: Map<String, Value>, config: &Configuration) -> Map<String, Value> {
+    if !config.sort_dependencies {
+        return object;
+    }
+
+    // `get_mut` + `mem::take` keeps each key in its canonical position;
+    // `shift_remove` + re-insert would push it to the end of the map.
+    const DEP_OBJECT_KEYS: &[&str] = &[
+        "dependencies",
+        "devDependencies",
+        "peerDependencies",
+        "optionalDependencies",
+        "overrides",
+        "resolutions",
+    ];
+    for key in DEP_OBJECT_KEYS {
+        if let Some(Value::Object(m)) = object.get_mut(*key) {
+            *m = sort_dependencies(std::mem::take(m));
+        }
+    }
+
+    const DEP_ARRAY_KEYS: &[&str] = &[
+        "bundledDependencies",
+        "bundleDependencies",
+        "extensionPack",
+        "extensionDependencies",
+    ];
+    for key in DEP_ARRAY_KEYS {
+        if let Some(Value::Array(a)) = object.get_mut(*key) {
+            *a = dedupe_sort_string_array(std::mem::take(a));
+        }
+    }
+
+    if let Some(Value::Object(m)) = object.get_mut("peerDependenciesMeta") {
+        *m = sort_object_alpha_deep(std::mem::take(m));
+    }
+    if let Some(Value::Object(m)) = object.get_mut("dependenciesMeta") {
+        *m = sort_by_package_ident_deep(std::mem::take(m));
+    }
+
+    object
+}
 
 /// Sort a dependency-style object (`dependencies`, `devDependencies`, ...).
 ///

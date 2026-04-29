@@ -1,0 +1,85 @@
+name: release
+
+on:
+  push:
+    tags:
+      # Bare-version convention; we explicitly do NOT support `v0.1.0`.
+      # Tag-format is also gated by the first job below as a fail-safe.
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+env:
+  CARGO_TERM_COLOR: always
+  WASM_PROFILE_DIR: target/wasm32-unknown-unknown/wasm-release
+  WASM_FILE: dprint_plugin_sortpackagejson.wasm
+
+permissions:
+  contents: write
+
+jobs:
+  tag-format-gate:
+    name: tag-format gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: reject v-prefixed tags
+        run: |
+          tag='${{ github.ref_name }}'
+          if [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "tag '$tag' OK"
+          else
+            echo "::error::tag '$tag' is not bare-version (no v-prefix). Use e.g. 0.1.0"
+            exit 1
+          fi
+
+  build:
+    name: build + upload
+    runs-on: ubuntu-latest
+    needs: tag-format-gate
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+
+      - name: install binaryen (wasm-opt)
+        run: |
+          set -euo pipefail
+          BINARYEN_VERSION=version_119
+          curl -fsSL "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_VERSION}/binaryen-${BINARYEN_VERSION}-x86_64-linux.tar.gz" \
+            | tar -xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/binaryen-${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: schema regen (safety net)
+        run: cargo run --features schema --example gen_schema > schema.json.regen
+      - name: schema drift check
+        run: diff schema.json schema.json.regen
+
+      - name: wasm build
+        run: cargo build --target wasm32-unknown-unknown --profile wasm-release --no-default-features
+
+      - name: wasm-opt
+        run: |
+          set -euo pipefail
+          wasm-opt -Oz --strip-debug --strip-producers \
+            -o "${WASM_PROFILE_DIR}/${WASM_FILE}.opt" \
+            "${WASM_PROFILE_DIR}/${WASM_FILE}"
+          mv "${WASM_PROFILE_DIR}/${WASM_FILE}.opt" "${WASM_PROFILE_DIR}/${WASM_FILE}"
+          ls -lh "${WASM_PROFILE_DIR}/${WASM_FILE}"
+
+      - name: rename for upload
+        run: cp "${WASM_PROFILE_DIR}/${WASM_FILE}" plugin.wasm
+
+      - name: sha256
+        run: |
+          sha256sum plugin.wasm | tee plugin.wasm.sha256
+          sha256sum schema.json   | tee schema.json.sha256
+
+      - name: release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            plugin.wasm
+            plugin.wasm.sha256
+            schema.json
+            schema.json.sha256

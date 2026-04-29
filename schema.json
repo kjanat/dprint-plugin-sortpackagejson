@@ -1,0 +1,56 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"title": "Configuration",
+	"description": "Plugin configuration. Mirrors options exposed by the npm\n`sort-package-json` package, with dprint-style camelCase keys.\n\nThe `use_tabs`, `indent_width`, `new_line_kind`, and `line_width` fields\nare resolved from dprint's global config by `resolve_config` and are\nnot part of the public schema (they appear in the global `dprint.json`\nschema instead).",
+	"type": "object",
+	"properties": {
+		"sortOrder": {
+			"description": "Custom top-level key order; empty falls back to the canonical\nsort-package-json order.",
+			"type": "array",
+			"items": {
+				"type": "string"
+			}
+		},
+		"sortDependencies": {
+			"description": "Alphabetize entries inside dependency objects (`dependencies`,\n`devDependencies`, etc.).",
+			"type": "boolean"
+		},
+		"sortScripts": {
+			"description": "Apply the canonical script ordering rules (pre/main/post grouping\nplus npm-run-all chain detection).",
+			"type": "boolean"
+		},
+		"sortNested": {
+			"description": "Apply nested-section sort rules (engines, exports, eslintConfig,\nprettier, workspaces, pnpm, ...).",
+			"type": "boolean"
+		},
+		"unknownKeys": {
+			"description": "How to order top-level keys not present in the canonical list.",
+			"$ref": "#/$defs/UnknownKeyPolicy"
+		}
+	},
+	"additionalProperties": false,
+	"required": [
+		"sortOrder",
+		"sortDependencies",
+		"sortScripts",
+		"sortNested",
+		"unknownKeys"
+	],
+	"$defs": {
+		"UnknownKeyPolicy": {
+			"description": "Strategy used for top-level keys that are not in the canonical\nsort-package-json order.",
+			"oneOf": [
+				{
+					"description": "Sort unknown keys alphabetically after canonical ones (matches\nupstream sort-package-json behavior).",
+					"type": "string",
+					"const": "alphabetical"
+				},
+				{
+					"description": "Keep unknown keys in their original order, appended after canonical.",
+					"type": "string",
+					"const": "preserve"
+				}
+			]
+		}
+	}
+}
