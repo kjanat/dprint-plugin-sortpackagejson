@@ -1,8 +1,8 @@
-import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** @returns {string} The path to the Wasm module. */
 function getPath(): string {
-	return join(import.meta.dirname, "./plugin.wasm");
+	return fileURLToPath(import.meta.resolve("@kjanat/dprint-plugin-sortpackagejson/wasm"));
 }
 
 export { getPath };

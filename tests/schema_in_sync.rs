@@ -9,7 +9,7 @@
 
 #![cfg(feature = "schema")]
 
-use std::time::Duration;
+use std::{env, fs::OpenOptions, io::Write, time::Duration};
 
 use dprint_plugin_sortpackagejson::configuration::Configuration;
 use serde::{Deserialize, Serialize};
@@ -77,6 +77,7 @@ fn schema_matches_published_latest() {
         let generated_pretty = format_normalized_schema(&normalized_generated);
         let published_pretty = format_normalized_schema(&normalized_published);
         let diff = diff_lines(&published_pretty, &generated_pretty);
+        report_schema_drift_to_ci(&latest.version, &schema_url, &diff);
         panic!(
             "schema for current code differs from published v{}.\n\
              URL:  {schema_url}\n\
@@ -140,7 +141,10 @@ fn strip_non_semantic_fields(value: &mut Value) {
                 strip_non_semantic_fields(value);
             }
         }
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        Value::String(text) => {
+            *text = text.replace('\n', " ");
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) => {}
     }
 }
 
@@ -184,4 +188,34 @@ fn diff_lines(old: &str, new: &str) -> String {
     }
 
     out
+}
+
+fn report_schema_drift_to_ci(latest_version: &str, schema_url: &str, diff: &str) {
+    if env::var_os("GITHUB_ACTIONS").is_none() {
+        return;
+    }
+
+    let summary = format!(
+        "## Schema drift\n\nPublished version: `{latest_version}`\n\nURL: <{schema_url}>\n\n```diff\n{diff}```\n",
+    );
+
+    if let Some(path) = env::var_os("GITHUB_STEP_SUMMARY")
+        && let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path)
+    {
+        let _ = writeln!(file, "{summary}");
+    }
+
+    let annotation = format!(
+        "schema drift vs published v{latest_version}. See step summary. URL: {schema_url}",
+    );
+    eprintln!(
+        "::error title=schema drift::{}",
+        escape_github_command(&annotation)
+    );
+}
+
+fn escape_github_command(text: &str) -> String {
+    text.replace('%', "%25")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
 }

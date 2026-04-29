@@ -23,12 +23,14 @@
 	"exports": {
 		".": "./dist/index.mjs",
 		"./package.json": "./package.json",
-		"./wasm": "./dist/plugin.wasm",
-		"./schema": "./dist/schema.json"
+		"./wasm": "./plugin.wasm",
+		"./schema": "./schema.json"
 	},
 	"types": "./dist/index.d.mts",
 	"files": [
 		"dist/",
+		"plugin.wasm",
+		"schema.json",
 		"LICENSE",
 		"README.md"
 	],
@@ -44,5 +46,13 @@
 		"@types/bun": "^1.3.13",
 		"tsdown": "^0.22.0-beta.1",
 		"typescript": "^6"
+	},
+	"volta": {
+		"extends": "../../package.json"
+	},
+	"publishConfig": {
+		"access": "public",
+		"registry": "https://registry.npmjs.org/",
+		"tag": "latest"
 	}
 }

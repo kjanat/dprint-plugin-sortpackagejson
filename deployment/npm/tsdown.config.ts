@@ -15,22 +15,22 @@ export default defineConfig({
 		enabled: true,
 		packageJson: true,
 		customExports(exports) {
-			exports["./wasm"] = `./dist/plugin.wasm`;
-			exports["./schema"] = `./dist/schema.json`;
+			exports["./wasm"] = `./plugin.wasm`;
+			exports["./schema"] = `./schema.json`;
 			return exports;
 		},
 	},
 	dts: { cjsReexport: true },
 	clean: true,
 	target: "esnext",
-	format: "es", // ["es", "cjs"],
-	copy: [{ from: wasmFile, rename: "plugin.wasm" }],
+	format: "es",
+	copy: [{ from: wasmFile, to: import.meta.dir, rename: "plugin.wasm" }],
 	hooks: {
 		async "build:before"(ctx) {
 			if (ctx.options.format !== "es") return;
 			Promise.all([
 				await $`just wasm`.cwd(repoRoot),
-				await $`just schema ${import.meta.dir}/dist/schema.json`,
+				await $`just schema ${import.meta.dir}/schema.json`,
 			]);
 		},
 		async "build:done"() {

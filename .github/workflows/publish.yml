@@ -10,9 +10,13 @@ on:
   push: { tags: ["[0-9]+.[0-9]+.[0-9]+"] }
 env: { CARGO_TERM_COLOR: always }
 permissions: { contents: read, id-token: write }
+defaults: { run: { working-directory: deployment/npm } }
 jobs:
   npm:
     runs-on: ubuntu-latest
+    environment:
+      name: npm
+      url: https://npm.im/@kjanat/dprint-plugin-sortpackagejson
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -23,8 +27,5 @@ jobs:
       - uses: taiki-e/install-action@just
       - run: just wasm
       - run: bun install
-        working-directory: deployment/npm
       - run: bun run test
-        working-directory: deployment/npm
-      - run: bun publish --access public
-        working-directory: deployment/npm
+      - run: npm publish --provenance
