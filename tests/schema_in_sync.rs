@@ -51,6 +51,16 @@ fn schema_matches_published_latest() {
         }
     };
 
+    let current = env!("CARGO_PKG_VERSION");
+    if current != latest.version {
+        eprintln!(
+            "skip: CARGO_PKG_VERSION ({current}) differs from latest published ({}); \
+             new version's URL will serve new schema.",
+            latest.version,
+        );
+        return;
+    }
+
     let schema_url = format!(
         "{PLUGINS_BASE_URL}/{REPO_PATH}/{}/schema.json",
         latest.version

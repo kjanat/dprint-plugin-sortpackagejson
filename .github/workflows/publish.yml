@@ -7,7 +7,6 @@ name: publish
 on:
   workflow_call:
   workflow_dispatch:
-  push: { tags: ["[0-9]+.[0-9]+.[0-9]+"] }
 env: { CARGO_TERM_COLOR: always }
 permissions: { contents: read, id-token: write }
 defaults: { run: { working-directory: deployment/npm } }
@@ -19,8 +18,8 @@ jobs:
       url: https://npm.im/@kjanat/dprint-plugin-sortpackagejson
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-        with: { targets: wasm32-unknown-unknown }
+      - uses: dtolnay/rust-toolchain@nightly
+        with: { components: rustfmt, targets: wasm32-unknown-unknown }
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: latest }
       - uses: kjanat/install-dprint@v1
