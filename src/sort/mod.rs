@@ -1,6 +1,7 @@
 mod canonical;
 mod dependencies;
 mod helpers;
+mod nested_alpha;
 mod top_level;
 
 use serde_json::{Map, Value};
@@ -11,10 +12,16 @@ use crate::configuration::Configuration;
 ///
 /// Pass 1: reorder top-level keys by canonical / user `sort_order`.
 /// Pass 2: apply per-field transforms (dependency-family alpha sort,
-/// dedupe-and-sort string arrays, deep-sort `*Meta` maps).
+/// dedupe-and-sort string arrays, deep-sort `*Meta` maps; nested-section
+/// sorts gated by `sort_nested`).
 pub fn sort_package_json(input: Map<String, Value>, config: &Configuration) -> Map<String, Value> {
     let sorted = top_level::sort_top_level(input, config);
-    apply_field_transforms(sorted, config)
+    let after_deps = apply_field_transforms(sorted, config);
+    if config.sort_nested {
+        nested_alpha::apply_nested_sorts(after_deps)
+    } else {
+        after_deps
+    }
 }
 
 fn apply_field_transforms(
