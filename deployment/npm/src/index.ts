@@ -1,6 +1,8 @@
-import path from "node:path";
+import { join } from "node:path";
 
-/** Gets the path to the Wasm module. */
-export function getPath(): string {
-	return path.join(__dirname, "../plugin.wasm");
+/** @returns {string} The path to the Wasm module. */
+function getPath(): string {
+	return join(import.meta.dirname, "./plugin.wasm");
 }
+
+export { getPath };

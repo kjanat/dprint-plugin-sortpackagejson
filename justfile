@@ -42,7 +42,8 @@ test-lib:
 # in rustfmt.toml. Install: rustup toolchain install nightly --component rustfmt.
 [group('build / test / lint')]
 fmt:
-    cargo +nightly fmt --all
+    @cargo +nightly fmt --all
+    @dprint fmt
 
 # Verify formatting without writing.
 [group('build / test / lint')]
@@ -56,16 +57,12 @@ clippy:
 
 # Auto-fix as much as possible (formatting + clippy --fix).
 [group('build / test / lint')]
-fix:
-    cargo +nightly fmt --all
+fix: fmt
     cargo clippy --all-targets --all-features --workspace --fix --allow-dirty -- -D clippy::all
 
 # All quality gates: format check + clippy + tests.
 [group('build / test / lint')]
-ci:
-    just fmt-check
-    just clippy
-    just test
+ci: fmt-check clippy test
 
 # CLI smoke tests against the upstream npm `sort-package-json`
 # Diff our output against the upstream npm package's output for a fixture.
@@ -97,18 +94,24 @@ wasm-size: wasm
 # Stage release artifacts: plugin.wasm + schema.json + .sha256 sidecars at repo root.
 [group('release')]
 package: wasm schema
-    cp {{ WASM_TARGET }} plugin.wasm
+    #!/usr/bin/env bash
+    cp '{{ WASM_TARGET }}' plugin.wasm
     sha256sum plugin.wasm | tee plugin.wasm.sha256
     sha256sum schema.json | tee schema.json.sha256
 
 # ---------------------------------------------------------------------------
 # Schema generation (Stage 8 wiring)
 # ---------------------------------------------------------------------------
-
 # Regenerate schema.json from the Configuration struct.
+
 [group('schema')]
-schema:
-    cargo run --features schema --bin gen_schema > schema.json
+[no-cd]
+schema $file="schema.json":
+    #!/usr/bin/env bash
+    OUTDIR="$(dirname "${file}")"
+    [[ -d "${OUTDIR}" ]] || mkdir -p "${OUTDIR}"
+    cargo run --features schema --bin gen_schema > "${file}"
+    echo "Generated ${file}"
 
 # Verify schema.json is in sync with the Configuration struct (drift gate).
 [group('schema')]
@@ -119,12 +122,7 @@ schema-check:
 # CodeRabbit review helpers
 # ---------------------------------------------------------------------------
 
-# Run a coderabbit review of unstaged changes.
+# Run a coderabbit review of unstaged changes. Pass `--base-commit` to review against an arbitrary base.
 [group('code review')]
-review:
-    coderabbit review --base-commit HEAD
-
-# Review against an arbitrary base.
-[group('code review')]
-review-from base:
-    coderabbit review --base-commit {{ base }}
+review base-commit="HEAD":
+    coderabbit review --base-commit {{ base-commit }}

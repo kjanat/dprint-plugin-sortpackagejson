@@ -1,27 +1,18 @@
+import { createStreaming } from "@dprint/formatter";
 import { describe, expect, test } from "bun:test";
-import fs from "node:fs";
 
-import { createFromBuffer } from "@dprint/formatter";
-import { getPath } from "../src/index.ts";
-
-const pluginPath = getPath();
-const pluginBuffer = fs.readFileSync(pluginPath);
-const formatter = createFromBuffer(pluginBuffer);
+const formatter = await createStreaming(
+	fetch(import.meta.resolve("@kjanat/dprint-plugin-sortpackagejson/wasm")),
+);
 
 describe("sortpackagejson plugin", () => {
-	// This is a basic test to ensure the plugin is working. The plugin should be tested more thoroughly in Rust.
+	// This is a basic test to ensure the plugin is working.
 	test("sorts package.json", () => {
 		const result = formatter.formatText({
 			filePath: "package.json",
-			fileText: `{
-	"version": "1.0.0",
-	"name": "demo"
-}\n`,
+			fileText: `{ "version": "1.0.0", "name": "test" }`,
 		});
-		const expectedOutput = `{
-	"name": "demo",
-	"version": "1.0.0"
-}\n`;
+		const expectedOutput = `{ "name": "test", "version": "1.0.0" }`;
 		expect(result).toBe(expectedOutput);
 	});
 });

@@ -1,6 +1,6 @@
 # dprint-plugin-sortpackagejson
 
-Rust port of [`sort-package-json`](https://github.com/keithamus/sort-package-json) as a [dprint](https://dprint.dev) plugin.
+Rust port of [`sort-package-json`] as a [dprint] plugin.
 
 Sorts a `package.json` into the canonical key order used across the npm
 ecosystem: lifecycle scripts grouped pre/main/post, dependencies
@@ -54,8 +54,7 @@ Programmatic consumers can resolve the wasm path via
 | `sortNested`       | `boolean`                      | `true`           | Apply nested-section sort rules (engines, exports, eslintConfig, prettier, workspaces, pnpm, ...).  |
 | `unknownKeys`      | `"alphabetical" \| "preserve"` | `"alphabetical"` | How to order top-level keys not present in the canonical list.                                      |
 
-The IDE-autocomplete schema for these options lives at
-[`schema.json`](https://github.com/kjanat/dprint-plugin-sortpackagejson/releases/latest/download/schema.json)
+The IDE-autocomplete schema for these options lives at [`schema.json`]
 and is regenerated from the Rust `Configuration` struct via `schemars`;
 drift is enforced by `tests/schema_in_sync.rs`.
 
@@ -110,4 +109,9 @@ listed under [Parity](#parity).
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+MIT — see [LICENSE].
+
+[LICENSE]: ./LICENSE
+[`schema.json`]: https://github.com/kjanat/dprint-plugin-sortpackagejson/releases/latest/download/schema.json
+[`sort-package-json`]: https://github.com/keithamus/sort-package-json
+[dprint]: https://dprint.dev

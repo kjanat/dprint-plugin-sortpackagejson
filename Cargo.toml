@@ -1,6 +1,6 @@
 [package]
 name        = "dprint-plugin-sortpackagejson"
-version     = "0.1.0"
+version     = "0.2.0"
 edition     = "2024"
 description = "Rust port of sort-package-json as a dprint plugin"
 readme      = "README.md"
