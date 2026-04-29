@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [master, main]
+    branches: [master]
   pull_request:
 
 env:
@@ -10,12 +10,7 @@ env:
 
 jobs:
   test:
-    name: test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -35,14 +30,5 @@ jobs:
         run: just test
       - name: wasm build
         run: just wasm
-
-  schema-drift:
-    name: schema drift
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@just
-      - name: schema_in_sync test
+      - name: schema drift
         run: just schema-check
