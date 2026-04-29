@@ -138,7 +138,7 @@ mod tests {
         };
         let input = "{\r\n\t\"version\": \"1.0.0\",\n\t\"name\": \"demo\"\n}\n";
         let expected = "{\n\t\"name\": \"demo\",\n\t\"version\": \"1.0.0\"\n}\n";
-        let out = format_text(&Path::new("package.json"), input, &config)
+        let out = format_text(Path::new("package.json"), input, &config)
             .unwrap()
             .unwrap_or_else(|| input.to_string());
         assert_eq!(out, expected);
