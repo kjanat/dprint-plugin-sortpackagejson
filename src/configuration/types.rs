@@ -1,6 +1,8 @@
 use dprint_core::configuration::NewLineKind;
 use serde::{Deserialize, Serialize};
 
+/// # dprint-plugin-sortpackagejson
+///
 /// Plugin configuration. Mirrors options exposed by the npm
 /// `sort-package-json` package, with dprint-style camelCase keys.
 ///

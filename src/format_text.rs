@@ -62,16 +62,17 @@ fn resolve_newline(kind: NewLineKind, file_text: &str) -> &'static str {
     match kind {
         NewLineKind::LineFeed => "\n",
         NewLineKind::CarriageReturnLineFeed => "\r\n",
-        // dprint-core's `Auto` is "decide based on the file's last newline";
-        // we approximate by detecting any CRLF in the input and falling back
-        // to LF when there is no newline at all.
-        NewLineKind::Auto => {
-            if file_text.contains("\r\n") {
-                "\r\n"
-            } else {
-                "\n"
-            }
-        }
+        // dprint-core's `Auto` resolves from the file's last newline.
+        NewLineKind::Auto => last_newline_kind(file_text).unwrap_or("\n"),
+    }
+}
+
+fn last_newline_kind(file_text: &str) -> Option<&'static str> {
+    let newline_index = file_text.rfind('\n')?;
+    if newline_index > 0 && file_text.as_bytes()[newline_index - 1] == b'\r' {
+        Some("\r\n")
+    } else {
+        Some("\n")
     }
 }
 
@@ -126,5 +127,20 @@ mod tests {
         let input = "{\n\t\"version\": \"1\",\n\t\"name\": \"demo\"\n}";
         let out = fmt(input);
         assert!(!out.ends_with('\n'), "no trailing newline should be added");
+    }
+
+    #[test]
+    fn auto_newline_uses_last_newline_kind() {
+        let config = Configuration {
+            use_tabs: true,
+            new_line_kind: NewLineKind::Auto,
+            ..Configuration::default()
+        };
+        let input = "{\r\n\t\"version\": \"1.0.0\",\n\t\"name\": \"demo\"\n}\n";
+        let expected = "{\n\t\"name\": \"demo\",\n\t\"version\": \"1.0.0\"\n}\n";
+        let out = format_text(&Path::new("package.json"), input, &config)
+            .unwrap()
+            .unwrap_or_else(|| input.to_string());
+        assert_eq!(out, expected);
     }
 }

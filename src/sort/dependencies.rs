@@ -66,14 +66,14 @@ pub fn sort_dependencies(map: Map<String, Value>) -> Map<String, Value> {
 
 /// Sort `dependenciesMeta`-style objects whose keys may be `name` or
 /// `name@version`. Mirrors upstream `sortObjectByIdent(_, /* deep */ true)`:
-/// recurse first to alpha-sort nested objects, then sort the current level
-/// by the package-name portion of the key.
+/// recurse first using the same package-ident comparator, then sort the
+/// current level by the package-name portion of the key.
 pub fn sort_by_package_ident_deep(map: Map<String, Value>) -> Map<String, Value> {
     let mut entries: Vec<(String, Value)> = map
         .into_iter()
         .map(|(k, v)| {
             let v = match v {
-                Value::Object(m) => Value::Object(sort_object_alpha_deep(m)),
+                Value::Object(m) => Value::Object(sort_by_package_ident_deep(m)),
                 other => other,
             };
             (k, v)
@@ -128,5 +128,22 @@ mod tests {
         let keys: Vec<&str> = sorted.keys().map(String::as_str).collect();
         // "@scope/bar" < "foo" lexicographically, then both `foo` entries in input order.
         assert_eq!(keys, vec!["@scope/bar", "foo@2", "foo@1"]);
+    }
+
+    #[test]
+    fn ident_deep_recurses_with_package_ident_sort() {
+        let mut nested = Map::new();
+        nested.insert("foo@2".into(), Value::Bool(true));
+        nested.insert("foo@1".into(), Value::Bool(false));
+
+        let mut map = Map::new();
+        map.insert("pkg".into(), Value::Object(nested));
+
+        let sorted = sort_by_package_ident_deep(map);
+        let Value::Object(nested_sorted) = sorted.get("pkg").expect("nested object") else {
+            panic!("nested value should stay an object");
+        };
+        let keys: Vec<&str> = nested_sorted.keys().map(String::as_str).collect();
+        assert_eq!(keys, vec!["foo@2", "foo@1"]);
     }
 }
