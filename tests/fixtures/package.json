@@ -1,0 +1,101 @@
+{
+	"name": "@example/kitchen-sink",
+	"version": "2.4.1",
+	"description": "A fixture exercising top-level reorder, dependency sort, script grouping, and exports",
+	"keywords": [
+		"fixture",
+		"dprint",
+		"test"
+	],
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/example/kitchen-sink"
+	},
+	"license": "MIT",
+	"exports": {
+		"./utils": "./src/utils.ts",
+		".": {
+			"import": "./dist/index.mjs",
+			"require": "./dist/index.cjs",
+			"default": "./dist/index.mjs"
+		}
+	},
+	"scripts": {
+		"prebuild": "rm -rf dist",
+		"build": "tsc",
+		"postbuild": "cp README.md dist/",
+		"dev": "vite",
+		"format": "prettier --write .",
+		"lint": "eslint .",
+		"pretest": "tsc --noEmit",
+		"test": "vitest"
+	},
+	"prettier": {
+		"semi": true,
+		"singleQuote": true,
+		"tabWidth": 2,
+		"overrides": [
+			{
+				"files": "*.md",
+				"options": {
+					"proseWrap": "always",
+					"tabWidth": 4
+				}
+			}
+		]
+	},
+	"eslintConfig": {
+		"env": {
+			"browser": true,
+			"node": true
+		},
+		"extends": [
+			"eslint:recommended",
+			"plugin:react/recommended"
+		],
+		"rules": {
+			"no-unused-vars": "warn",
+			"import/order": "error",
+			"react/prop-types": "off"
+		}
+	},
+	"dependencies": {
+		"axios": "^1.6.0",
+		"lodash": "^4.17.21",
+		"react": "^18.2.0",
+		"zod": "^3.22.0"
+	},
+	"devDependencies": {
+		"@types/lodash": "^4.17.0",
+		"@types/react": "^18.2.0",
+		"eslint": "^8.56.0",
+		"prettier": "^3.2.0",
+		"typescript": "^5.3.0",
+		"vitest": "^1.0.0"
+	},
+	"peerDependencies": {
+		"react": "^18.2.0",
+		"react-dom": "^18.2.0"
+	},
+	"bundledDependencies": [
+		"axios",
+		"lodash"
+	],
+	"engines": {
+		"node": ">=18",
+		"npm": ">=9"
+	},
+	"pnpm": {
+		"peerDependencyRules": {
+			"ignoreMissing": [
+				"react-dom"
+			]
+		},
+		"overrides": {
+			"axios@1.5.0": "1.6.0",
+			"lodash@4.17.20": "4.17.21",
+			"zod@3.21.0": "3.22.0"
+		},
+		"patchedDependencies": {}
+	}
+}

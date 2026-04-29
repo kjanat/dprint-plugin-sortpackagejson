@@ -16,7 +16,9 @@
 		"**/node_modules",
 		"**/target",
 	],
+	"sortPackageJson": {},
 	"plugins": [
+		"./target/wasm32-unknown-unknown/wasm-release/dprint_plugin_sortpackagejson.wasm",
 		"https://plugins.dprint.dev/json-0.21.3.wasm",
 		"https://plugins.dprint.dev/markdown-0.21.1.wasm",
 		"https://plugins.dprint.dev/typescript-0.95.15.wasm",
