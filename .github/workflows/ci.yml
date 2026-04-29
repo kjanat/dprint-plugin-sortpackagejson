@@ -11,10 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-        with: { components: clippy, targets: wasm32-unknown-unknown }
       - uses: dtolnay/rust-toolchain@nightly
-        with: { components: rustfmt }
+        with: { components: "clippy,rustfmt", targets: wasm32-unknown-unknown }
       - uses: oven-sh/setup-bun@v2
         with: { bun-version: latest }
       - uses: Swatinem/rust-cache@v2

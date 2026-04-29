@@ -83,8 +83,13 @@ diff fixture:
 # Build the wasm artifact at the size-optimized profile.
 [group('wasm')]
 wasm:
-    @rustup target list --installed | rg -qx "wasm32-unknown-unknown" || rustup target add wasm32-unknown-unknown
-    cargo build --target wasm32-unknown-unknown --profile wasm-release --no-default-features
+    #!/usr/bin/env bash
+    TARGET_INSTALLED="$(rustup target list --installed --quiet | grep {{ TARGET }} --count)"
+    if ((TARGET_INSTALLED == 0)); then
+      echo "Target {{ TARGET }} not installed. Installing..."
+      rustup target add {{ TARGET }}
+    fi
+    cargo build --target {{ TARGET }} --profile {{ PROFILE }} --no-default-features
 
 # Print the size of the wasm artifact.
 [group('wasm')]

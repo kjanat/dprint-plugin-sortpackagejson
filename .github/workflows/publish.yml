@@ -25,7 +25,6 @@ jobs:
         with: { bun-version: latest }
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@just
-      - run: just wasm
       - run: bun install
       - run: bun run test
       - run: npm publish --provenance
