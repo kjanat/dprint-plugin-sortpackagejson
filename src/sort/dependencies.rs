@@ -245,8 +245,12 @@ mod tests {
     fn detects_package_manager_from_document() {
         assert!(detect(json!({ "packageManager": "npm@10.0.0" })));
         assert!(!detect(json!({ "packageManager": "pnpm@9.0.0" })));
-        assert!(detect(json!({ "devEngines": { "packageManager": { "name": "npm" } } })));
-        assert!(!detect(json!({ "devEngines": { "packageManager": { "name": "yarn" } } })));
+        assert!(detect(
+            json!({ "devEngines": { "packageManager": { "name": "npm" } } })
+        ));
+        assert!(!detect(
+            json!({ "devEngines": { "packageManager": { "name": "yarn" } } })
+        ));
         assert!(!detect(json!({ "pnpm": {} })));
         assert!(detect(json!({ "engines": { "npm": ">=10" } })));
         // No in-document signal: upstream's fallback is npm.
@@ -293,4 +297,3 @@ mod tests {
         assert_eq!(keys, vec!["a-b", "a_b"]);
     }
 }
-

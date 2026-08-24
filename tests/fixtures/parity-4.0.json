@@ -1,0 +1,78 @@
+{
+	"wireit": {
+		"test": {
+			"output": [
+				"cov"
+			],
+			"command": "vitest",
+			"files": [
+				"src"
+			],
+			"dependencies": [
+				{
+					"cascade": false,
+					"script": "build"
+				},
+				"lint"
+			],
+			"env": {
+				"ZED": {
+					"default": "x",
+					"external": true
+				},
+				"ALPHA": "lit"
+			},
+			"service": {
+				"other": 1,
+				"readyWhen": {
+					"zebra": 1,
+					"lineMatches": "up"
+				}
+			}
+		},
+		"build": {
+			"command": "tsc"
+		}
+	},
+	"packageManager": "npm@10.2.0",
+	"version": "1.0.0",
+	"name": "hard",
+	"dependencies": {
+		"a_b": "1",
+		"a-b": "1",
+		"a1b": "1",
+		"React": "1",
+		"rabbit": "1",
+		"zzz": "1",
+		"@scope/x": "1"
+	},
+	"pnpm": {
+		"overrides": {
+			"foo@10": "a",
+			"foo@2": "b",
+			"foo@1": "c",
+			"bar": "d",
+			"@scope/p@^2": "e",
+			"@scope/p@^10": "f"
+		}
+	},
+	"resolutions": {
+		"a_b": "1",
+		"a-b": "1"
+	},
+	"eslintConfig": {
+		"rules": {
+			"a_b": "error",
+			"a-b": "error",
+			"plugin/x": "off"
+		}
+	},
+	"scripts": {
+		"build": "tsc",
+		"prebuild": "clean",
+		"test": "vitest"
+	},
+	"engines": {
+		"npm": ">=10"
+	}
+}

@@ -127,10 +127,10 @@ fn group_lower_bound(group: &str) -> Option<Version> {
     for token in group.split_whitespace() {
         // A group is a conjunction, so its lower bound is the greatest of
         // its comparators' lower bounds.
-        if let Some(candidate) = comparator_lower_bound(token)? {
-            if bound.as_ref().is_none_or(|current| candidate > *current) {
-                bound = Some(candidate);
-            }
+        if let Some(candidate) = comparator_lower_bound(token)?
+            && bound.as_ref().is_none_or(|current| candidate > *current)
+        {
+            bound = Some(candidate);
         }
     }
 
@@ -315,19 +315,20 @@ mod tests {
                 Some(v) => render(&v),
                 None => "NONE".to_string(),
             };
-            assert_eq!(
-                actual,
-                expected,
-                "line {}: range {range:?}",
-                line_no + 1
-            );
+            assert_eq!(actual, expected, "line {}: range {range:?}", line_no + 1);
         }
     }
 
     #[test]
     fn unparseable_ranges_yield_none_instead_of_panicking() {
         // node-semver throws on each of these; we must not.
-        for range in ["workspace:*", "npm:foo@1.2.3", "latest", "catalog:", "file:../x"] {
+        for range in [
+            "workspace:*",
+            "npm:foo@1.2.3",
+            "latest",
+            "catalog:",
+            "file:../x",
+        ] {
             assert_eq!(min_version(range), None, "range {range:?}");
         }
     }

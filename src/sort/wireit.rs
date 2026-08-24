@@ -136,7 +136,14 @@ mod tests {
         }));
         assert_eq!(
             keys(&out["wireit"]["build"]),
-            vec!["command", "dependencies", "files", "output", "alpha", "zulu"]
+            vec![
+                "command",
+                "dependencies",
+                "files",
+                "output",
+                "alpha",
+                "zulu"
+            ]
         );
     }
 

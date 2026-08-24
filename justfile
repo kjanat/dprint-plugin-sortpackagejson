@@ -75,10 +75,11 @@ diff fixture:
     @cargo run --quiet --features cli --bin sortpkg < {{ fixture }} > /tmp/ours.json
     @cat /tmp/ours.json
     @echo '== upstream =='
-    @bunx sort-package-json --stdin < {{ fixture }} > /tmp/upstream.json
+    @bunx sort-package-json@4.0.0 --stdin < {{ fixture }} > /tmp/upstream.json
     @cat /tmp/upstream.json
     @echo '== diff =='
     @diff /tmp/ours.json /tmp/upstream.json && echo 'MATCH' || echo 'DIFFERS'
+    @echo '(layout may differ: upstream always expands, we keep each container'"'"'s shape)'
 
 # Build the wasm artifact at the size-optimized profile.
 [group('wasm')]

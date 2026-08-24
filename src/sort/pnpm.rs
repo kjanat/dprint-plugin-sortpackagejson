@@ -298,4 +298,3 @@ mod tests {
         assert_eq!(keys, vec!["foo@1", "foo@workspace:*"]);
     }
 }
-

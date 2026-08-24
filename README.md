@@ -53,6 +53,7 @@ Programmatic consumers can resolve the wasm path via
 | `sortScripts`      | `boolean`                      | `true`           | Apply pre/main/post grouping + colon-namespace handling + npm-run-all chain detection.              |
 | `sortNested`       | `boolean`                      | `true`           | Apply nested-section sort rules (engines, exports, eslintConfig, prettier, workspaces, pnpm, ...).  |
 | `unknownKeys`      | `"alphabetical" \| "preserve"` | `"alphabetical"` | How to order top-level keys not present in the canonical list.                                      |
+| `packageManager`   | `"auto" \| "npm" \| "other"`   | `"auto"`         | Which package manager's dependency ordering to use. See [Parity](#parity).                          |
 
 The IDE-autocomplete schema for these options lives at [`schema.json`]
 and is regenerated from the Rust `Configuration` struct via `schemars`;
@@ -60,18 +61,49 @@ drift is enforced by `tests/schema_in_sync.rs`.
 
 ## Parity
 
-Behavioral target: `sort-package-json` v3.6.1. Drifts that you should know
-about, all listed in module-level docs:
+Behavioral target: `sort-package-json` **v4.0.0**. Key ordering is
+byte-identical to upstream for the fixtures in `tests/fixtures/`, including
+`parity-4.0.json`, which exercises `wireit`, locale-aware dependency
+ordering, semver-ordered `pnpm.overrides` and ESLint rule ordering.
 
-- **Dependency comparator**: upstream switches between locale-aware
-  (`localeCompare(_, 'en')`) and plain string compare based on detected
-  package manager (npm vs yarn/pnpm). For all-ASCII lowercase keys (the
-  realistic majority) the two orderings agree, so we ship plain compare in
-  0.1.0.
-- **`pnpm.overrides` semver compare**: upstream uses `semver` to break ties
-  for same-package-different-range keys; we fall back to plain
-  lexicographic on the range portion to keep the wasm artifact small.
-- **`imports`**: upstream does not reorder imports; we don't either.
+Two things differ deliberately:
+
+- **Package manager detection.** Upstream picks npm's locale-aware
+  comparator over yarn/pnpm's plain one partly by looking for `yarn.lock`,
+  `.yarnrc.yml`, `pnpm-lock.yaml` or `pnpm-workspace.yaml` on disk. A wasm
+  plugin is sandboxed and cannot do that, so `"auto"` uses every
+  _in-document_ signal upstream uses — `packageManager`,
+  `devEngines.packageManager`, a `pnpm` key, `engines.npm` — and otherwise
+  defaults to npm, the same fallback upstream lands on when it finds no lock
+  file. A yarn or pnpm project whose `package.json` carries none of those
+  signals should set `"packageManager": "other"`.
+- **Unparseable version ranges.** `pnpm.overrides` keys are ordered by the
+  minimum version each range admits, matching upstream. node-semver _throws_
+  on ranges it cannot parse (`workspace:*`, `npm:foo@1.2.3`); a formatter
+  must not, so those fall back to comparing the range text.
+
+Layout is not a parity target: upstream re-serialises with
+`JSON.stringify`, which expands every object and array. This plugin keeps
+each container's existing shape, like `dprint-plugin-json` does.
+
+## Formatting
+
+`package.json` is matched by file _name_, and dprint gives a file to a
+single plugin, so this plugin takes `package.json` away from
+`dprint-plugin-json`. To avoid `package.json` becoming the one unformatted
+file in a project, the sorted text is handed back to dprint's host formatter
+under a virtual `.json` path — so `dprint-plugin-json`'s own configuration
+applies, exactly as it would for any other JSON file.
+
+If no JSON plugin is configured, the plugin formats the file itself using
+the resolved `useTabs` / `indentWidth` / `newLineKind` settings, so the
+result is the same either way.
+
+Input is parsed with `jsonc-parser` — the same parser `dprint-plugin-json`
+uses — so comments and trailing commas are accepted rather than rejected.
+Comments travel with the property they belong to when sorting moves it, and
+trailing commas are dropped on output, matching `dprint-plugin-json`'s
+behavior for a `.json` file.
 
 ## Development
 
@@ -90,7 +122,12 @@ isolation from dprint:
 
 ```sh
 cargo run --features cli --bin sortpkg < some/package.json
+cargo run --features cli --bin sortpkg -- --tabs some/package.json
+cargo run --features cli --bin sortpkg -- --indent 4 some/package.json
 ```
+
+Without `--tabs` or `--indent`, the file's existing indentation is kept —
+the same thing the upstream `sort-package-json` CLI does.
 
 ## Releases
 

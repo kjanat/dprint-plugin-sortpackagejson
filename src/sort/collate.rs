@@ -154,12 +154,7 @@ mod tests {
                 parts.next().unwrap(),
                 parts.next().unwrap().parse::<i32>().unwrap(),
             );
-            assert_eq!(
-                cmp(a, b),
-                expected,
-                "line {}: {a:?} vs {b:?}",
-                line_no + 1
-            );
+            assert_eq!(cmp(a, b), expected, "line {}: {a:?} vs {b:?}", line_no + 1);
             checked += 1;
         }
         assert!(checked > 4000, "corpus looks truncated: {checked} pairs");

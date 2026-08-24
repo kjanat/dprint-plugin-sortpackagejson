@@ -28,12 +28,13 @@ path              = "src/bin/gen_schema.rs"
 required-features = ["schema"]
 
 [dependencies]
-anyhow      = "1"
-clap        = { version = "4", features = ["derive"], optional = true }
-dprint-core = { version = "0.67", features = ["wasm"] }
-schemars    = { version = "1", optional = true }
-serde       = { version = "1", features = ["derive"] }
-serde_json  = { version = "1", features = ["preserve_order"] }
+anyhow       = "1"
+clap         = { version = "4", features = ["derive"], optional = true }
+dprint-core  = { version = "0.67", features = ["wasm"] }
+jsonc-parser = { version = "0.33", features = ["cst", "serde_json"] }
+schemars     = { version = "1", optional = true }
+serde        = { version = "1", features = ["derive"] }
+serde_json   = { version = "1", features = ["preserve_order"] }
 
 [dev-dependencies.ureq]
 version          = "2"
