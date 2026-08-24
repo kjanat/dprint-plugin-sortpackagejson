@@ -20,6 +20,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use dprint_core::configuration::NewLineKind;
 use dprint_plugin_sortpackagejson::{configuration::Configuration, detect_indent, format_text};
 
 #[derive(Parser)]
@@ -72,6 +73,8 @@ fn resolve_style(args: &Args, text: &str) -> Configuration {
     Configuration {
         use_tabs,
         indent_width,
+        // Keep the file's own line endings, as the upstream CLI does.
+        new_line_kind: NewLineKind::Auto,
         ..Configuration::default()
     }
 }
