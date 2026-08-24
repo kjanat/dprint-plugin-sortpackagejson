@@ -15,8 +15,10 @@ use std::cmp::Ordering;
 
 use serde_json::{Map, Value};
 
-use super::collate::compare_locale;
-use super::helpers::{map_object_array, sort_object_alpha, sort_object_by_keys};
+use super::{
+    collate::compare_locale,
+    helpers::{map_object_array, sort_object_alpha, sort_object_by_keys},
+};
 use crate::configuration::Configuration;
 
 const ESLINT_CONFIG_ORDER: &[&str] = &[

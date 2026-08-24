@@ -31,8 +31,10 @@ use std::{collections::VecDeque, path::Path};
 
 use anyhow::{Result, anyhow, bail};
 use dprint_core::configuration::NewLineKind;
-use jsonc_parser::ParseOptions;
-use jsonc_parser::cst::{CstNode, CstRootNode};
+use jsonc_parser::{
+    ParseOptions,
+    cst::{CstNode, CstRootNode},
+};
 use serde_json::Value;
 
 use crate::{configuration::Configuration, sort::sort_package_json};

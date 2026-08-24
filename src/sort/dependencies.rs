@@ -1,8 +1,10 @@
 use serde_json::{Map, Value};
 
-use super::collate::compare_locale;
-use super::helpers::{
-    dedupe_sort_string_array, sort_object_alpha, sort_object_alpha_deep, sort_object_with,
+use super::{
+    collate::compare_locale,
+    helpers::{
+        dedupe_sort_string_array, sort_object_alpha, sort_object_alpha_deep, sort_object_with,
+    },
 };
 use crate::configuration::{Configuration, PackageManagerPolicy};
 

@@ -16,9 +16,11 @@ use std::cmp::Ordering;
 
 use serde_json::{Map, Value};
 
-use super::collate::compare_locale;
-use super::helpers::{sort_object_alpha_deep, sort_object_by_keys};
-use super::semver_min::min_version;
+use super::{
+    collate::compare_locale,
+    helpers::{sort_object_alpha_deep, sort_object_by_keys},
+    semver_min::min_version,
+};
 use crate::configuration::Configuration;
 
 const PNPM_ORDER: &[&str] = &[
