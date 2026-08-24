@@ -1,5 +1,5 @@
 //! Pipeline pass: `pnpm` config sort. Mirrors upstream
-//! `sort-package-json` v3.6.1 (`sortPnpmConfig`).
+//! `sort-package-json` (`sortPnpmConfig`).
 //!
 //! - Top level uses a fixed key order with the listed pnpm settings;
 //!   unknowns alpha after.
@@ -7,18 +7,18 @@
 //! - `pnpm.overrides` keys use a name-then-version-range comparator so that
 //!   different version ranges of the same package are grouped.
 //!
-//! Drift note: upstream uses `semver` for the range comparison
-//! (`semverCompare(semverMinVersion(a), semverMinVersion(b))`). To keep
-//! the wasm artifact small we don't link semver; same-name keys fall back
-//! to a plain lexicographic compare on the version-range portion. For
-//! all-ASCII ranges with the same numeric structure (the realistic
-//! majority) this matches semver order.
+//! The name half uses ICU collation ([`super::collate`]) and the range half
+//! compares minimum satisfying versions ([`super::semver_min`]), matching
+//! upstream's `sortObjectBySemver` — so `foo@2` sorts before `foo@10` rather
+//! than after it.
 
 use std::cmp::Ordering;
 
 use serde_json::{Map, Value};
 
+use super::collate::compare_locale;
 use super::helpers::{sort_object_alpha_deep, sort_object_by_keys};
+use super::semver_min::min_version;
 use crate::configuration::Configuration;
 
 const PNPM_ORDER: &[&str] = &[
@@ -80,19 +80,33 @@ fn sort_overrides_by_ident_and_range(map: Map<String, Value>) -> Map<String, Val
     entries.into_iter().collect()
 }
 
-/// Equivalent to upstream `sortObjectBySemver`'s comparator, modulo the
-/// semver fallback (see module docs).
+/// Equivalent to upstream `sortObjectBySemver`'s comparator: package names
+/// compare with ICU collation, and equal names tie-break on the minimum
+/// version each range admits.
 fn compare_specifier(a: &str, b: &str) -> Ordering {
     let (a_name, a_range) = parse_name_and_range(a);
     let (b_name, b_range) = parse_name_and_range(b);
-    match a_name.cmp(b_name) {
+    match compare_locale(a_name, b_name) {
         Ordering::Equal => match (a_range, b_range) {
             (None, None) => Ordering::Equal,
             (None, Some(_)) => Ordering::Less,
             (Some(_), None) => Ordering::Greater,
-            (Some(ar), Some(br)) => ar.cmp(br),
+            (Some(ar), Some(br)) => compare_range(ar, br),
         },
         other => other,
+    }
+}
+
+/// Compare two version ranges by the lowest version each admits, mirroring
+/// upstream's `semverCompare(semverMinVersion(a), semverMinVersion(b))`.
+///
+/// Ranges node-semver cannot parse (`workspace:*`, `npm:foo@1`, ...) make it
+/// throw; here they fall back to comparing the range text, so an unusual
+/// override never breaks formatting.
+fn compare_range(a: &str, b: &str) -> Ordering {
+    match (min_version(a), min_version(b)) {
+        (Some(left), Some(right)) => left.cmp(&right),
+        _ => a.cmp(b),
     }
 }
 
@@ -241,4 +255,47 @@ mod tests {
             .collect();
         assert_eq!(keys, vec!["foo", "foo@1"]);
     }
+
+    #[test]
+    fn overrides_ranges_compare_by_semver_not_text() {
+        let out = run(json!({
+            "pnpm": {
+                "overrides": {
+                    "foo@10": "a",
+                    "foo@2": "b",
+                    "foo@1": "c",
+                    "bar": "d"
+                }
+            }
+        }));
+        let keys: Vec<&str> = out["pnpm"]["overrides"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        // Lexicographically `foo@10` would precede `foo@2`.
+        assert_eq!(keys, vec!["bar", "foo@1", "foo@2", "foo@10"]);
+    }
+
+    #[test]
+    fn overrides_tolerate_non_semver_ranges() {
+        let out = run(json!({
+            "pnpm": {
+                "overrides": {
+                    "foo@workspace:*": "a",
+                    "foo@1": "b"
+                }
+            }
+        }));
+        let keys: Vec<&str> = out["pnpm"]["overrides"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        // Falls back to text order for the unparseable range; no panic.
+        assert_eq!(keys, vec!["foo@1", "foo@workspace:*"]);
+    }
 }
+

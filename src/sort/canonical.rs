@@ -52,6 +52,7 @@ pub const CANONICAL_ORDER: &[&str] = &[
     "binary",
     "scripts",
     "betterScripts",
+    "wireit",
     "l10n",
     "contributes",
     "activationEvents",

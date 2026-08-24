@@ -1,12 +1,25 @@
+use std::cmp::Ordering;
 use std::collections::HashSet;
 
 use serde_json::{Map, Value};
 
-/// Alphabetize an object's keys (one level only).
-pub fn sort_object_alpha(map: Map<String, Value>) -> Map<String, Value> {
+/// Reorder an object's keys with an arbitrary comparator (one level only).
+pub fn sort_object_with<F>(map: Map<String, Value>, mut compare: F) -> Map<String, Value>
+where
+    F: FnMut(&str, &str) -> Ordering,
+{
     let mut entries: Vec<(String, Value)> = map.into_iter().collect();
-    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    entries.sort_by(|a, b| compare(&a.0, &b.0));
     entries.into_iter().collect()
+}
+
+/// Alphabetize an object's keys by code unit (one level only).
+///
+/// This is upstream's default comparator (`sort-object-keys` with no
+/// comparator falls back to `Array.prototype.sort`, i.e. code-unit order),
+/// which coincides with Rust's byte-wise `Ord` for ASCII.
+pub fn sort_object_alpha(map: Map<String, Value>) -> Map<String, Value> {
+    sort_object_with(map, |a, b| a.cmp(b))
 }
 
 /// Reorder an object: listed keys first (in given order), unknowns alpha after.

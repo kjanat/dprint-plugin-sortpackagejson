@@ -4,7 +4,7 @@ use dprint_core::configuration::{
     get_value,
 };
 
-use super::types::{Configuration, UnknownKeyPolicy};
+use super::types::{Configuration, PackageManagerPolicy, UnknownKeyPolicy};
 
 pub fn resolve_config(
     config: ConfigKeyMap,
@@ -33,12 +33,32 @@ pub fn resolve_config(
         }
     };
 
+    let package_manager_raw: String = get_value(
+        &mut config,
+        "packageManager",
+        "auto".to_string(),
+        &mut diagnostics,
+    );
+    let package_manager = match package_manager_raw.as_str() {
+        "auto" => PackageManagerPolicy::Auto,
+        "npm" => PackageManagerPolicy::Npm,
+        "other" => PackageManagerPolicy::Other,
+        other => {
+            diagnostics.push(ConfigurationDiagnostic {
+                property_name: "packageManager".to_string(),
+                message: format!("Expected 'auto', 'npm' or 'other', got '{other}'."),
+            });
+            PackageManagerPolicy::Auto
+        }
+    };
+
     let resolved = Configuration {
         sort_order,
         sort_dependencies: get_value(&mut config, "sortDependencies", true, &mut diagnostics),
         sort_scripts: get_value(&mut config, "sortScripts", true, &mut diagnostics),
         sort_nested: get_value(&mut config, "sortNested", true, &mut diagnostics),
         unknown_keys,
+        package_manager,
         line_width: get_value(
             &mut config,
             "lineWidth",

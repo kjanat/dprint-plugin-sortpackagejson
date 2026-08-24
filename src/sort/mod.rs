@@ -8,6 +8,7 @@
 //! mechanical and the pass code self-contained for testing.
 
 mod canonical;
+mod collate;
 mod dependencies;
 mod eslint;
 mod exports;
@@ -16,7 +17,9 @@ mod nested_alpha;
 mod pnpm;
 mod prettier;
 mod scripts;
+mod semver_min;
 mod top_level;
+mod wireit;
 mod workspaces;
 
 use serde_json::{Map, Value};
@@ -37,6 +40,7 @@ const PASSES: &[Pass] = &[
     prettier::pass,
     workspaces::pass,
     pnpm::pass,
+    wireit::pass,
     nested_alpha::pass,
 ];
 

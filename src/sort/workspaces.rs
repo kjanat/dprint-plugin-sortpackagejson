@@ -11,7 +11,7 @@
 use serde_json::{Map, Value};
 
 use super::{
-    dependencies::sort_dependencies,
+    dependencies::{should_sort_dependencies_like_npm, sort_dependencies},
     helpers::{dedupe_sort_string_array, sort_object_by_keys},
 };
 use crate::configuration::Configuration;
@@ -23,20 +23,21 @@ pub fn pass(mut object: Map<String, Value>, config: &Configuration) -> Map<Strin
     if !config.sort_nested {
         return object;
     }
+    let like_npm = should_sort_dependencies_like_npm(&object, config.package_manager);
     if let Some(Value::Object(m)) = object.get_mut("workspaces") {
-        *m = sort_workspaces_object(std::mem::take(m));
+        *m = sort_workspaces_object(std::mem::take(m), like_npm);
     }
     object
 }
 
-fn sort_workspaces_object(map: Map<String, Value>) -> Map<String, Value> {
+fn sort_workspaces_object(map: Map<String, Value>, like_npm: bool) -> Map<String, Value> {
     let mut out = sort_object_by_keys(map, WORKSPACES_ORDER);
 
     if let Some(Value::Array(a)) = out.get_mut("packages") {
         *a = dedupe_sort_string_array(std::mem::take(a));
     }
     if let Some(Value::Object(m)) = out.get_mut("catalog") {
-        *m = sort_dependencies(std::mem::take(m));
+        *m = sort_dependencies(std::mem::take(m), like_npm);
     }
 
     out
