@@ -116,6 +116,7 @@ pub fn min_version(range: &str) -> Option<Version> {
 
 /// Lowest version satisfying a single comparator set (one `||` alternative).
 fn group_lower_bound(group: &str) -> Option<Version> {
+    let group = attach_operators(group);
     let group = group.trim();
 
     // Hyphen range: `A - B` has the same lower bound as `>=A`.
@@ -141,6 +142,37 @@ fn group_lower_bound(group: &str) -> Option<Version> {
         patch: 0,
         pre: Vec::new(),
     }))
+}
+
+/// Reattach an operator to its operand: node-semver accepts `>= 1.0.0` and
+/// treats it exactly like `>=1.0.0`. Splitting on whitespace alone would make
+/// `>=` a bare comparator and `1.0.0` a version in its own right, so `< 2.0.0`
+/// would yield a *lower* bound of 2.0.0 instead of none.
+///
+/// The hyphen of a range (`1.2.3 - 2.0.0`) is untouched: `-` is not an
+/// operator character here.
+fn attach_operators(group: &str) -> String {
+    let mut out = String::with_capacity(group.len());
+    let mut chars = group.chars().peekable();
+    while let Some(c) = chars.next() {
+        out.push(c);
+        if matches!(c, '>' | '<' | '=' | '^' | '~') {
+            // Consume the rest of a multi-character operator, then drop the
+            // whitespace separating it from the version.
+            while let Some(&next) = chars.peek() {
+                if matches!(next, '>' | '<' | '=' | '^' | '~') {
+                    out.push(next);
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+            while chars.peek().is_some_and(|c| c.is_whitespace()) {
+                chars.next();
+            }
+        }
+    }
+    out
 }
 
 fn hyphen_range_lower(group: &str) -> Option<Version> {

@@ -130,6 +130,12 @@ fn format_with_style(
         }
     }
 
+    // Trivia outside the root value, block comments and verbatim duplicate
+    // properties all carry their original line endings, so without this a
+    // CRLF document formatted as LF (or vice versa) comes out mixed. Safe to
+    // do blindly: a raw newline cannot appear inside a JSON string.
+    let output = normalize_newlines(&output, style.newline);
+
     if output == file_text {
         Ok(None)
     } else {
@@ -280,17 +286,38 @@ fn render_object(
         lookup.entry(unit.key.clone()).or_default().push_back(unit);
     }
 
-    let mut ordered: Vec<(&Unit, &Value)> = Vec::with_capacity(target.len());
+    // JSONC permits duplicate keys, but the parsed value keeps only the last
+    // of them. Emitting one property per *value* key would silently delete
+    // the others, so every source property is emitted, duplicates grouped
+    // together at their sorted position.
+    let mut ordered: Vec<(&Unit, Option<&Value>)> = Vec::with_capacity(split.units.len());
     for (key, value) in target {
-        let Some(unit) = lookup.get_mut(key).and_then(VecDeque::pop_front) else {
+        let Some(units) = lookup.get_mut(key) else {
             bail!("sorted object contained unknown key: {key}");
         };
-        ordered.push((unit, value));
+        let duplicated = units.len() > 1;
+        while let Some(unit) = units.pop_front() {
+            // With duplicates there is no sound mapping from one parsed value
+            // back onto several source properties, so they are re-emitted
+            // exactly as written rather than being rewritten from the value.
+            ordered.push((unit, if duplicated { None } else { Some(value) }));
+        }
     }
 
-    emit_units(&split, &ordered, style, depth, out, |unit, value, out| {
-        render_property(&unit.item, value, style, depth, out)
-    })
+    emit_units(
+        &split,
+        &ordered,
+        style,
+        depth,
+        out,
+        |unit, value, out| match value {
+            Some(value) => render_property(&unit.item, value, style, depth, out),
+            None => {
+                out.push_str(&unit.item.to_string());
+                Ok(())
+            }
+        },
+    )
 }
 
 fn render_array(
@@ -317,30 +344,41 @@ fn render_array(
         lookup.entry(unit.key.clone()).or_default().push_back(unit);
     }
 
-    let mut ordered: Vec<(&Unit, &Value)> = Vec::with_capacity(target.len());
+    let mut ordered: Vec<(&Unit, Option<&Value>)> = Vec::with_capacity(target.len());
     for value in target {
         let key = canonical_key(value);
         let Some(unit) = lookup.get_mut(&key).and_then(VecDeque::pop_front) else {
             bail!("sorted array contained an element not present in the source");
         };
-        ordered.push((unit, value));
+        ordered.push((unit, Some(value)));
     }
 
-    emit_units(&split, &ordered, style, depth, out, |unit, value, out| {
-        render_node(&unit.item, value, style, depth + 1, out)
-    })
+    emit_units(
+        &split,
+        &ordered,
+        style,
+        depth,
+        out,
+        |unit, value, out| match value {
+            Some(value) => render_node(&unit.item, value, style, depth + 1, out),
+            None => {
+                out.push_str(&unit.item.to_string());
+                Ok(())
+            }
+        },
+    )
 }
 
 fn emit_units<F>(
     split: &Split,
-    ordered: &[(&Unit, &Value)],
+    ordered: &[(&Unit, Option<&Value>)],
     style: Style,
     depth: usize,
     out: &mut String,
     mut render_item: F,
 ) -> Result<()>
 where
-    F: FnMut(&Unit, &Value, &mut String) -> Result<()>,
+    F: FnMut(&Unit, Option<&Value>, &mut String) -> Result<()>,
 {
     out.push_str(&split.open);
 
@@ -379,7 +417,7 @@ where
         } else {
             emit_leading(&unit.leading, style, depth + 1, out);
         }
-        render_item(unit, value, out)?;
+        render_item(unit, *value, out)?;
         if position != last {
             out.push(',');
         }
@@ -419,6 +457,23 @@ fn emit_close_leading(leading: &[CstNode], style: Style, depth: usize, out: &mut
         }
     }
     push_indent(out, style, depth);
+}
+
+/// Rewrite every line ending in `text` to `newline`.
+fn normalize_newlines(text: &str, newline: &str) -> String {
+    if !text.contains('\n') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(index) = rest.find('\n') {
+        let line = &rest[..index];
+        out.push_str(line.strip_suffix('\r').unwrap_or(line));
+        out.push_str(newline);
+        rest = &rest[index + 1..];
+    }
+    out.push_str(rest);
+    out
 }
 
 fn push_indent(out: &mut String, style: Style, depth: usize) {
@@ -917,5 +972,73 @@ mod tests {
             "element keys should reorder in place: {out:?}"
         );
         assert!(out.contains("\"lint\""), "sibling element kept: {out:?}");
+    }
+
+    #[test]
+    fn duplicate_keys_are_preserved_not_dropped() {
+        // JSONC allows duplicates and the parsed value keeps only the last;
+        // dropping the others would lose content the user wrote.
+        let input = "{\n  \"name\": \"x\",\n  \"name\": \"y\",\n  \"version\": \"1\"\n}\n";
+        let out = fmt_with(input, &spaces());
+        assert_eq!(out.matches("\"name\"").count(), 2, "both kept: {out:?}");
+        assert!(out.contains("\"x\""), "first value kept: {out:?}");
+        assert!(out.contains("\"y\""), "second value kept: {out:?}");
+        // Still sorted: name before version.
+        assert!(
+            out.find("\"name\"") < out.find("\"version\""),
+            "still sorted: {out:?}"
+        );
+    }
+
+    #[test]
+    fn duplicate_keys_survive_a_round_trip() {
+        let input = "{\n  \"name\": \"x\",\n  \"name\": \"y\"\n}\n";
+        let once = fmt_with(input, &spaces());
+        let twice = fmt_with(&once, &spaces());
+        assert_eq!(once, twice, "must be idempotent with duplicates");
+    }
+
+    #[test]
+    fn line_endings_are_never_mixed() {
+        // CRLF document formatted with an explicit LF setting: the trivia
+        // outside the root used to keep its CRLF, producing a mixed file.
+        let input = "{\r\n  \"version\": \"1\",\r\n  \"name\": \"x\"\r\n}\r\n";
+        let lf = fmt_with(
+            input,
+            &Configuration {
+                new_line_kind: NewLineKind::LineFeed,
+                ..Configuration::default()
+            },
+        );
+        assert!(!lf.contains('\r'), "no CR should survive: {lf:?}");
+
+        let crlf = fmt_with(
+            input,
+            &Configuration {
+                new_line_kind: NewLineKind::CarriageReturnLineFeed,
+                ..Configuration::default()
+            },
+        );
+        assert_eq!(
+            crlf.matches("\r\n").count(),
+            crlf.matches('\n').count(),
+            "every newline should be CRLF: {crlf:?}"
+        );
+    }
+
+    #[test]
+    fn block_comment_line_endings_are_normalized() {
+        let input = "{\r\n  /* one\r\n     two */\r\n  \"name\": \"x\"\r\n}\r\n";
+        let out = fmt_with(
+            input,
+            &Configuration {
+                new_line_kind: NewLineKind::LineFeed,
+                ..Configuration::default()
+            },
+        );
+        assert!(
+            !out.contains('\r'),
+            "CR inside a block comment too: {out:?}"
+        );
     }
 }

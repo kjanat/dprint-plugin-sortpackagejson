@@ -1,6 +1,7 @@
 // Dev-time generator for tests/fixtures/semver_min.txt — ground truth for
 // src/sort/semver_min.rs, taken from node-semver's own minVersion.
-// Run with: node scripts/gen_semver_fixture.mjs
+// Needs node-semver, which is not a project dependency; run it as:
+//   npx --yes --package=semver node scripts/gen_semver_fixture.mjs
 import { writeFileSync } from "node:fs";
 import minVersion from "semver/ranges/min-version.js";
 
