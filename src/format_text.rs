@@ -1,38 +1,78 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    path::Path,
-};
+//! Text-level formatting for `package.json`.
+//!
+//! The document is parsed with `jsonc-parser`'s CST — the same parser
+//! `dprint-plugin-json` uses — so comments, trailing commas and the other
+//! JSONC leniencies it accepts on `.json` files are accepted here too. The
+//! CST keeps every byte of trivia, which lets the sorted key order be applied
+//! by moving whole properties (comments included) rather than re-serialising
+//! the document.
+//!
+//! Whitespace between properties is re-emitted from the resolved indent and
+//! newline settings, so the output is always formatted — this is the floor
+//! for when no host formatter is available (under dprint with no JSON plugin
+//! configured, and in the standalone CLI), and it is why `package.json` is
+//! never left as the one unformatted file in a project.
+//!
+//! Each container keeps the shape it had: one that was written on a single
+//! line stays on a single line, one that spanned lines stays expanded. That
+//! matches `dprint-plugin-json` and keeps a deliberate `"dependencies": {}`
+//! one-liner from being blown open.
+//!
+//! Trailing commas are dropped, matching what `dprint-plugin-json` does for a
+//! `.json` file.
+//!
+//! Note the host is always given the result and its answer always wins. A
+//! host returning `None` means "already formatted", *not* "no host" — the two
+//! are indistinguishable through the plugin API — so falling back on `None`
+//! to a second, different style makes formatting unstable. Routing everything
+//! through one style avoids that.
 
-use anyhow::{Context, Result, bail};
+use std::{collections::VecDeque, path::Path};
+
+use anyhow::{Result, anyhow, bail};
+use dprint_core::configuration::NewLineKind;
+use jsonc_parser::{
+    ParseOptions,
+    cst::{CstNode, CstRootNode},
+};
 use serde_json::Value;
 
 use crate::{configuration::Configuration, sort::sort_package_json};
 
-/// Format a `package.json`: parse, sort the semantic structure, then rebuild
-/// the text by reordering only the parts that changed. Existing layout stays
-/// intact whenever the sorted value is semantically identical.
+/// Resolved output style.
+#[derive(Clone, Copy)]
+struct Style<'a> {
+    indent: &'a str,
+    newline: &'a str,
+}
+
+/// Sort `package.json` and re-emit it, preserving the original layout.
+///
+/// Used when a host formatter will normalise the result afterwards.
 pub fn format_text(
-    _file_path: &Path,
+    file_path: &Path,
     file_text: &str,
     config: &Configuration,
 ) -> Result<Option<String>> {
-    let Some(sorted_value) = sort_value(file_text, config)? else {
-        return Ok(None);
-    };
-
-    let document = ParsedDocument::parse(file_text)?;
-    let mut output = String::with_capacity(file_text.len());
-    output.push_str(&file_text[..document.root.span().start]);
-    output.push_str(&render_node(&document.root, &sorted_value, file_text)?);
-    output.push_str(&file_text[document.root.span().end..]);
-
-    if output == file_text {
-        Ok(None)
-    } else {
-        Ok(Some(output))
-    }
+    let indent = resolve_indent(config);
+    let newline = resolve_newline(config.new_line_kind, file_text);
+    format_with_style(
+        file_path,
+        file_text,
+        config,
+        Style {
+            indent: &indent,
+            newline,
+        },
+    )
 }
 
+/// Sort, then hand the result to the dprint host formatter.
+///
+/// The host is asked to format even when the sort changed nothing, so
+/// `package.json` gets the same treatment as every other JSON file. If no
+/// host formatter claims it, fall back to normalising here rather than
+/// returning text nobody formatted.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 pub(crate) fn format_text_with_host<F>(
     file_path: &Path,
@@ -45,8 +85,11 @@ where
 {
     let sorted_text = format_text(file_path, file_text, config)?;
     let intermediate = sorted_text.as_deref().unwrap_or(file_text);
-    let host_text = host_formatter(intermediate)?;
-    let output = host_text.unwrap_or_else(|| intermediate.to_string());
+
+    // `None` from the host means it had nothing to change, which covers both
+    // "already formatted" and "no plugin claimed it". Either way the
+    // intermediate is the answer: it is already formatted by us.
+    let output = host_formatter(intermediate)?.unwrap_or_else(|| intermediate.to_string());
 
     if output == file_text {
         Ok(None)
@@ -55,476 +98,512 @@ where
     }
 }
 
-fn sort_value(file_text: &str, config: &Configuration) -> Result<Option<Value>> {
-    let value: Value = serde_json::from_str(file_text).context("parsing package.json")?;
-    let original_compact = serialize_compact(&value)?;
+fn format_with_style(
+    _file_path: &Path,
+    file_text: &str,
+    config: &Configuration,
+    style: Style,
+) -> Result<Option<String>> {
+    let root = CstRootNode::parse(file_text, &ParseOptions::default())
+        .map_err(|err| anyhow!("parsing package.json: {err}"))?;
 
-    let Value::Object(object) = value else {
-        // Top-level is not an object — nothing to sort.
+    let Some(root_value) = root.value() else {
+        // Nothing but trivia — leave it alone.
+        return Ok(None);
+    };
+    let Some(Value::Object(object)) = root.to_serde_value() else {
+        // Top level is not an object; there is nothing to sort.
         return Ok(None);
     };
 
     let sorted = Value::Object(sort_package_json(object, config));
-    if serialize_compact(&sorted)? == original_compact {
-        return Ok(None);
-    }
 
-    Ok(Some(sorted))
-}
-
-fn render_node(original: &Node, target: &Value, file_text: &str) -> Result<String> {
-    if compact_slice(original.span().slice(file_text))? == serialize_compact(target)? {
-        return Ok(original.span().slice(file_text).to_string());
-    }
-
-    match (original, target) {
-        (Node::Object(original_object), Value::Object(target_object)) => {
-            render_object(original_object, target_object, file_text)
-        }
-        (Node::Array(original_array), Value::Array(target_array)) => {
-            render_array(original_array, target_array, file_text)
-        }
-        _ => serialize_compact(target),
-    }
-}
-
-fn render_object(
-    original: &ObjectNode,
-    target: &serde_json::Map<String, Value>,
-    file_text: &str,
-) -> Result<String> {
-    let property_lookup: HashMap<&str, &PropertyNode> = original
-        .properties
-        .iter()
-        .map(|property| (property.key.as_str(), property))
-        .collect();
-
-    let mut rendered_properties = Vec::with_capacity(target.len());
-    for (key, value) in target {
-        let Some(property) = property_lookup.get(key.as_str()) else {
-            bail!("sorted object contained unknown key: {key}");
-        };
-        let rendered_value = render_node(&property.value, value, file_text)?;
-        if rendered_value == property.value.span().slice(file_text) {
-            rendered_properties.push(property.span.slice(file_text).to_string());
+    let mut output = String::with_capacity(file_text.len());
+    let mut rendered_root = false;
+    for child in root.children() {
+        // The root has exactly one non-trivia child: the document value.
+        if !rendered_root && !child.is_trivia() && !child.is_token() {
+            rendered_root = true;
+            render_node(&root_value, &sorted, style, 0, &mut output)?;
         } else {
-            let mut rendered_property = String::with_capacity(property.span.len());
-            rendered_property
-                .push_str(&file_text[property.span.start..property.value.span().start]);
-            rendered_property.push_str(&rendered_value);
-            rendered_properties.push(rendered_property);
+            output.push_str(&child.to_string());
         }
     }
 
-    Ok(rebuild_object(original, &rendered_properties, file_text))
-}
+    // Trivia outside the root value, block comments and verbatim duplicate
+    // properties all carry their original line endings, so without this a
+    // CRLF document formatted as LF (or vice versa) comes out mixed. Safe to
+    // do blindly: a raw newline cannot appear inside a JSON string.
+    let output = normalize_newlines(&output, style.newline);
 
-fn render_array(original: &ArrayNode, target: &[Value], file_text: &str) -> Result<String> {
-    let mut original_elements: HashMap<String, VecDeque<&Node>> = HashMap::new();
-    for element in &original.elements {
-        original_elements
-            .entry(canonical_slice(element.span().slice(file_text))?)
-            .or_default()
-            .push_back(element);
-    }
-
-    let mut rendered_elements = Vec::with_capacity(target.len());
-    for value in target {
-        let key = canonical_value(value)?;
-        let rendered = match original_elements
-            .get_mut(&key)
-            .and_then(VecDeque::pop_front)
-        {
-            Some(element) => render_node(element, value, file_text)?,
-            None => serialize_compact(value)?,
-        };
-        rendered_elements.push(rendered);
-    }
-
-    Ok(rebuild_array(original, &rendered_elements, file_text))
-}
-
-fn rebuild_object(
-    original: &ObjectNode,
-    rendered_properties: &[String],
-    file_text: &str,
-) -> String {
-    rebuild_sequence(
-        '{',
-        '}',
-        original.span,
-        &original
-            .properties
-            .iter()
-            .map(|property| property.span)
-            .collect::<Vec<_>>(),
-        rendered_properties,
-        file_text,
-    )
-}
-
-fn rebuild_array(original: &ArrayNode, rendered_elements: &[String], file_text: &str) -> String {
-    rebuild_sequence(
-        '[',
-        ']',
-        original.span,
-        &original.elements.iter().map(Node::span).collect::<Vec<_>>(),
-        rendered_elements,
-        file_text,
-    )
-}
-
-fn rebuild_sequence(
-    open: char,
-    close: char,
-    span: Span,
-    original_items: &[Span],
-    rendered_items: &[String],
-    file_text: &str,
-) -> String {
-    let mut output = String::new();
-    output.push(open);
-
-    if let Some(first_item) = original_items.first() {
-        output.push_str(&file_text[span.start + 1..first_item.start]);
-        for (index, rendered_item) in rendered_items.iter().enumerate() {
-            output.push_str(rendered_item);
-            if index + 1 < rendered_items.len() {
-                output.push_str(
-                    &file_text[original_items[index].end..original_items[index + 1].start],
-                );
-            }
-        }
-        if let Some(last_item) = original_items.last() {
-            output.push_str(&file_text[last_item.end..span.end - 1]);
-        }
+    if output == file_text {
+        Ok(None)
     } else {
-        output.push_str(&file_text[span.start + 1..span.end - 1]);
+        Ok(Some(output))
     }
-
-    output.push(close);
-    output
 }
 
-fn serialize_compact(value: &Value) -> Result<String> {
-    serde_json::to_string(value).context("serializing compact JSON")
-}
-
-fn compact_slice(text: &str) -> Result<String> {
-    let value: Value = serde_json::from_str(text).context("parsing JSON slice")?;
-    serialize_compact(&value)
-}
-
-fn canonical_slice(text: &str) -> Result<String> {
-    let value: Value = serde_json::from_str(text).context("parsing JSON slice")?;
-    canonical_value(&value)
-}
-
-fn canonical_value(value: &Value) -> Result<String> {
-    let mut output = String::new();
-    write_canonical_value(value, &mut output)?;
-    Ok(output)
-}
-
-fn write_canonical_value(value: &Value, output: &mut String) -> Result<()> {
-    match value {
-        Value::Null => output.push_str("null"),
-        Value::Bool(boolean) => output.push_str(if *boolean { "true" } else { "false" }),
-        Value::Number(number) => output.push_str(&number.to_string()),
-        Value::String(string) => output.push_str(&serde_json::to_string(string)?),
-        Value::Array(values) => {
-            output.push('[');
-            for (index, value) in values.iter().enumerate() {
-                if index > 0 {
-                    output.push(',');
-                }
-                write_canonical_value(value, output)?;
+fn render_node(
+    node: &CstNode,
+    target: &Value,
+    style: Style,
+    depth: usize,
+    out: &mut String,
+) -> Result<()> {
+    match (node.as_object(), node.as_array(), target) {
+        (Some(object), _, Value::Object(target_object)) => {
+            render_object(&object.into(), target_object, style, depth, out)
+        }
+        (_, Some(array), Value::Array(target_array)) => {
+            render_array(&array.into(), target_array, style, depth, out)
+        }
+        // Scalars, and any shape the sort did not change, come through as
+        // their original text — which keeps number and string spelling
+        // exactly as written. If a pass ever does rewrite a value, emitting
+        // the source text would silently discard it, so fall back to the
+        // sorted value whenever the two disagree.
+        _ => {
+            let unchanged = node
+                .to_serde_value()
+                .is_some_and(|value| canonical_key(&value) == canonical_key(target));
+            if unchanged {
+                out.push_str(&node.to_string());
+            } else {
+                out.push_str(&serde_json::to_string(target)?);
             }
-            output.push(']');
+            Ok(())
         }
-        Value::Object(map) => {
-            let mut entries: Vec<_> = map.iter().collect();
-            entries.sort_by(|left, right| left.0.cmp(right.0));
-
-            output.push('{');
-            for (index, (key, value)) in entries.iter().enumerate() {
-                if index > 0 {
-                    output.push(',');
-                }
-                output.push_str(&serde_json::to_string(key)?);
-                output.push(':');
-                write_canonical_value(value, output)?;
-            }
-            output.push('}');
-        }
-    }
-
-    Ok(())
-}
-
-struct ParsedDocument {
-    root: Node,
-}
-
-impl ParsedDocument {
-    fn parse(file_text: &str) -> Result<Self> {
-        let mut parser = Parser::new(file_text);
-        parser.skip_whitespace();
-        let root = parser.parse_value()?;
-        parser.skip_whitespace();
-        if parser.position != file_text.len() {
-            bail!("unexpected trailing content after root JSON value");
-        }
-        Ok(Self { root })
     }
 }
 
-struct Parser<'a> {
-    file_text: &'a str,
-    bytes: &'a [u8],
-    position: usize,
+/// One property (or array element) plus the trivia that belongs to it.
+struct Unit {
+    key: String,
+    /// Trivia preceding the item, including comments on their own lines.
+    leading: Vec<CstNode>,
+    item: CstNode,
+    /// Comments sitting after the item on the same line.
+    trailing: Vec<CstNode>,
 }
 
-impl<'a> Parser<'a> {
-    fn new(file_text: &'a str) -> Self {
-        Self {
-            file_text,
-            bytes: file_text.as_bytes(),
-            position: 0,
-        }
-    }
+/// Split a container's children into `{`/`[`, the units between, the trivia
+/// before the closing token, and the closing token itself.
+struct Split {
+    open: String,
+    units: Vec<Unit>,
+    close_leading: Vec<CstNode>,
+    close: String,
+    /// Whether the container spanned more than one line in the source.
+    multiline: bool,
+}
 
-    fn parse_value(&mut self) -> Result<Node> {
-        self.skip_whitespace();
-        match self.peek_byte() {
-            Some(b'{') => self.parse_object().map(Node::Object),
-            Some(b'[') => self.parse_array().map(Node::Array),
-            Some(b'"') => self.parse_string_span().map(Node::Primitive),
-            Some(b'-' | b'0'..=b'9' | b't' | b'f' | b'n') => {
-                self.parse_primitive().map(Node::Primitive)
-            }
-            Some(byte) => bail!("unexpected JSON byte: {}", byte as char),
-            None => bail!("unexpected end of JSON input"),
-        }
-    }
+fn split_container<F>(children: Vec<CstNode>, key_of: F) -> Result<Split>
+where
+    F: Fn(&CstNode) -> Option<String>,
+{
+    let mut iter = children.into_iter().peekable();
+    let open = match iter.next() {
+        Some(token) if token.is_token() => token.to_string(),
+        _ => bail!("expected an opening brace or bracket"),
+    };
 
-    fn parse_object(&mut self) -> Result<ObjectNode> {
-        let start = self.position;
-        self.position += 1; // '{'
-        self.skip_whitespace();
+    let mut inner: Vec<CstNode> = iter.collect();
+    let close = match inner.pop() {
+        Some(token) if token.is_token() => token.to_string(),
+        _ => bail!("expected a closing brace or bracket"),
+    };
 
-        let mut properties = Vec::new();
-        if self.peek_byte() == Some(b'}') {
-            self.position += 1;
-            return Ok(ObjectNode {
-                span: Span {
-                    start,
-                    end: self.position,
-                },
-                properties,
-            });
-        }
+    let mut units: Vec<Unit> = Vec::new();
+    let mut pending: Vec<CstNode> = Vec::new();
+    let mut index = 0usize;
 
-        loop {
-            self.skip_whitespace();
-            let key_span = self.parse_string_span()?;
-            let key: String = serde_json::from_str(key_span.slice(self.file_text))
-                .context("decoding object key")?;
-            self.skip_whitespace();
-            self.expect_byte(b':')?;
-            self.position += 1;
-            let value = self.parse_value()?;
-            properties.push(PropertyNode {
-                key,
-                span: Span {
-                    start: key_span.start,
-                    end: value.span().end,
-                },
-                value,
-            });
-            self.skip_whitespace();
-            match self.peek_byte() {
-                Some(b',') => self.position += 1,
-                Some(b'}') => {
-                    self.position += 1;
-                    break;
-                }
-                Some(byte) => bail!("unexpected object separator byte: {}", byte as char),
-                None => bail!("unterminated JSON object"),
-            }
-        }
+    while index < inner.len() {
+        let node = &inner[index];
+        let Some(key) = key_of(node) else {
+            pending.push(node.clone());
+            index += 1;
+            continue;
+        };
 
-        Ok(ObjectNode {
-            span: Span {
-                start,
-                end: self.position,
-            },
-            properties,
-        })
-    }
+        let item = node.clone();
+        // Trivia gathered so far belongs to this item and travels with it.
+        let leading = std::mem::take(&mut pending);
+        index += 1;
 
-    fn parse_array(&mut self) -> Result<ArrayNode> {
-        let start = self.position;
-        self.position += 1; // '['
-        self.skip_whitespace();
-
-        let mut elements = Vec::new();
-        if self.peek_byte() == Some(b']') {
-            self.position += 1;
-            return Ok(ArrayNode {
-                span: Span {
-                    start,
-                    end: self.position,
-                },
-                elements,
-            });
-        }
-
-        loop {
-            let value = self.parse_value()?;
-            elements.push(value);
-            self.skip_whitespace();
-            match self.peek_byte() {
-                Some(b',') => self.position += 1,
-                Some(b']') => {
-                    self.position += 1;
-                    break;
-                }
-                Some(byte) => bail!("unexpected array separator byte: {}", byte as char),
-                None => bail!("unterminated JSON array"),
-            }
-        }
-
-        Ok(ArrayNode {
-            span: Span {
-                start,
-                end: self.position,
-            },
-            elements,
-        })
-    }
-
-    fn parse_string_span(&mut self) -> Result<Span> {
-        let start = self.position;
-        self.expect_byte(b'"')?;
-        self.position += 1;
-
-        while let Some(byte) = self.peek_byte() {
-            match byte {
-                b'"' => {
-                    self.position += 1;
-                    return Ok(Span {
-                        start,
-                        end: self.position,
-                    });
-                }
-                b'\\' => {
-                    self.position += 1;
-                    if self.peek_byte().is_none() {
-                        bail!("unterminated JSON string escape");
-                    }
-                    self.position += 1;
-                }
-                _ => self.position += 1,
-            }
-        }
-
-        bail!("unterminated JSON string")
-    }
-
-    fn parse_primitive(&mut self) -> Result<Span> {
-        let start = self.position;
-        while let Some(byte) = self.peek_byte() {
-            if matches!(byte, b',' | b']' | b'}' | b' ' | b'\t' | b'\r' | b'\n') {
+        // Consume the separating comma and any comment that stays on this
+        // line; a newline ends the item's trailing trivia.
+        let mut trailing: Vec<CstNode> = Vec::new();
+        let mut held: Vec<CstNode> = Vec::new();
+        while index < inner.len() {
+            let next = &inner[index];
+            if next.is_newline() {
                 break;
-            }
-            self.position += 1;
-        }
-        if self.position == start {
-            bail!("expected JSON primitive");
-        }
-        Ok(Span {
-            start,
-            end: self.position,
-        })
-    }
-
-    fn skip_whitespace(&mut self) {
-        while let Some(byte) = self.peek_byte() {
-            if matches!(byte, b' ' | b'\t' | b'\r' | b'\n') {
-                self.position += 1;
+            } else if next.is_comma() {
+                held.clear();
+                index += 1;
+            } else if next.is_comment() {
+                trailing.append(&mut held);
+                trailing.push(next.clone());
+                index += 1;
+            } else if next.is_whitespace() {
+                held.push(next.clone());
+                index += 1;
             } else {
                 break;
             }
         }
+        // Whitespace not followed by a comment belongs to the next item.
+        pending = held;
+
+        units.push(Unit {
+            key,
+            leading,
+            item,
+            trailing,
+        });
     }
 
-    fn expect_byte(&self, expected: u8) -> Result<()> {
-        match self.peek_byte() {
-            Some(byte) if byte == expected => Ok(()),
-            Some(byte) => bail!(
-                "expected JSON byte {:?}, found {:?}",
-                expected as char,
-                byte as char
-            ),
-            None => bail!(
-                "expected JSON byte {:?}, found end of input",
-                expected as char
-            ),
+    let multiline = units
+        .iter()
+        .any(|unit| unit.leading.iter().any(CstNode::is_newline))
+        || pending.iter().any(CstNode::is_newline);
+
+    Ok(Split {
+        open,
+        units,
+        close_leading: pending,
+        close,
+        multiline,
+    })
+}
+
+fn render_object(
+    object: &CstNode,
+    target: &serde_json::Map<String, Value>,
+    style: Style,
+    depth: usize,
+    out: &mut String,
+) -> Result<()> {
+    let split = split_container(object.children(), |node| {
+        node.as_object_prop()
+            .and_then(|prop| prop.name())
+            .and_then(|name| name.decoded_value().ok())
+    })?;
+
+    let mut lookup: std::collections::HashMap<String, VecDeque<&Unit>> =
+        std::collections::HashMap::new();
+    for unit in &split.units {
+        lookup.entry(unit.key.clone()).or_default().push_back(unit);
+    }
+
+    // JSONC permits duplicate keys, but the parsed value keeps only the last
+    // of them. Emitting one property per *value* key would silently delete
+    // the others, so every source property is emitted, duplicates grouped
+    // together at their sorted position.
+    let mut ordered: Vec<(&Unit, Option<&Value>)> = Vec::with_capacity(split.units.len());
+    for (key, value) in target {
+        let Some(units) = lookup.get_mut(key) else {
+            bail!("sorted object contained unknown key: {key}");
+        };
+        let duplicated = units.len() > 1;
+        while let Some(unit) = units.pop_front() {
+            // With duplicates there is no sound mapping from one parsed value
+            // back onto several source properties, so they are re-emitted
+            // exactly as written rather than being rewritten from the value.
+            ordered.push((unit, if duplicated { None } else { Some(value) }));
         }
     }
 
-    fn peek_byte(&self) -> Option<u8> {
-        self.bytes.get(self.position).copied()
+    emit_units(
+        &split,
+        &ordered,
+        style,
+        depth,
+        out,
+        |unit, value, out| match value {
+            Some(value) => render_property(&unit.item, value, style, depth, out),
+            None => {
+                out.push_str(&unit.item.to_string());
+                Ok(())
+            }
+        },
+    )
+}
+
+fn render_array(
+    array: &CstNode,
+    target: &[Value],
+    style: Style,
+    depth: usize,
+    out: &mut String,
+) -> Result<()> {
+    // Array elements have no names, so they are matched by their value. The
+    // key is canonicalised (object keys sorted) because a sort pass may have
+    // reordered keys *inside* an element, which must not break its identity.
+    let split = split_container(array.children(), |node| {
+        if node.is_trivia() || node.is_token() {
+            None
+        } else {
+            node.to_serde_value().as_ref().map(canonical_key)
+        }
+    })?;
+
+    let mut lookup: std::collections::HashMap<String, VecDeque<&Unit>> =
+        std::collections::HashMap::new();
+    for unit in &split.units {
+        lookup.entry(unit.key.clone()).or_default().push_back(unit);
     }
-}
 
-#[derive(Clone, Copy)]
-struct Span {
-    start: usize,
-    end: usize,
-}
-
-impl Span {
-    fn len(self) -> usize {
-        self.end - self.start
+    let mut ordered: Vec<(&Unit, Option<&Value>)> = Vec::with_capacity(target.len());
+    for value in target {
+        let key = canonical_key(value);
+        let Some(unit) = lookup.get_mut(&key).and_then(VecDeque::pop_front) else {
+            bail!("sorted array contained an element not present in the source");
+        };
+        ordered.push((unit, Some(value)));
     }
 
-    fn slice(self, file_text: &str) -> &str {
-        &file_text[self.start..self.end]
+    emit_units(
+        &split,
+        &ordered,
+        style,
+        depth,
+        out,
+        |unit, value, out| match value {
+            Some(value) => render_node(&unit.item, value, style, depth + 1, out),
+            None => {
+                out.push_str(&unit.item.to_string());
+                Ok(())
+            }
+        },
+    )
+}
+
+fn emit_units<F>(
+    split: &Split,
+    ordered: &[(&Unit, Option<&Value>)],
+    style: Style,
+    depth: usize,
+    out: &mut String,
+    mut render_item: F,
+) -> Result<()>
+where
+    F: FnMut(&Unit, Option<&Value>, &mut String) -> Result<()>,
+{
+    out.push_str(&split.open);
+
+    if ordered.is_empty() {
+        // Keep an empty container's inner trivia as-is; there is nothing to
+        // lay out.
+        for node in &split.close_leading {
+            out.push_str(&node.to_string());
+        }
+        out.push_str(&split.close);
+        return Ok(());
     }
-}
 
-enum Node {
-    Object(ObjectNode),
-    Array(ArrayNode),
-    Primitive(Span),
-}
+    // A container written on one line stays on one line, unless it carries a
+    // comment that would otherwise swallow the rest of the line.
+    let has_comments = ordered.iter().any(|(unit, _)| {
+        unit.leading.iter().any(CstNode::is_comment)
+            || unit.trailing.iter().any(CstNode::is_comment)
+    }) || split.close_leading.iter().any(CstNode::is_comment);
+    let inline = !split.multiline && !has_comments;
 
-impl Node {
-    fn span(&self) -> Span {
-        match self {
-            Node::Object(object) => object.span,
-            Node::Array(array) => array.span,
-            Node::Primitive(span) => *span,
+    // Arrays read better tight (`[1, 2]`); objects get inner padding
+    // (`{ "a": 1 }`), matching dprint-plugin-json.
+    let pad = split.open == "{";
+
+    let last = ordered.len() - 1;
+    for (position, (unit, value)) in ordered.iter().enumerate() {
+        if inline {
+            if position == 0 {
+                if pad {
+                    out.push(' ');
+                }
+            } else {
+                out.push(' ');
+            }
+        } else {
+            emit_leading(&unit.leading, style, depth + 1, out);
+        }
+        render_item(unit, *value, out)?;
+        if position != last {
+            out.push(',');
+        }
+        for node in &unit.trailing {
+            out.push_str(&node.to_string());
         }
     }
+
+    if inline {
+        if pad {
+            out.push(' ');
+        }
+    } else {
+        emit_close_leading(&split.close_leading, style, depth, out);
+    }
+    out.push_str(&split.close);
+    Ok(())
 }
 
-struct ObjectNode {
-    span: Span,
-    properties: Vec<PropertyNode>,
+fn emit_leading(leading: &[CstNode], style: Style, depth: usize, out: &mut String) {
+    // Drop the original whitespace but keep every comment, each on its own
+    // line at the item's indentation.
+    for node in leading {
+        if node.is_comment() {
+            push_indent(out, style, depth);
+            out.push_str(node.to_string().trim());
+        }
+    }
+    push_indent(out, style, depth);
 }
 
-struct PropertyNode {
-    key: String,
-    span: Span,
-    value: Node,
+fn emit_close_leading(leading: &[CstNode], style: Style, depth: usize, out: &mut String) {
+    for node in leading {
+        if node.is_comment() {
+            push_indent(out, style, depth + 1);
+            out.push_str(node.to_string().trim());
+        }
+    }
+    push_indent(out, style, depth);
 }
 
-struct ArrayNode {
-    span: Span,
-    elements: Vec<Node>,
+/// Rewrite every line ending in `text` to `newline`.
+fn normalize_newlines(text: &str, newline: &str) -> String {
+    if !text.contains('\n') {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(index) = rest.find('\n') {
+        let line = &rest[..index];
+        out.push_str(line.strip_suffix('\r').unwrap_or(line));
+        out.push_str(newline);
+        rest = &rest[index + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn push_indent(out: &mut String, style: Style, depth: usize) {
+    out.push_str(style.newline);
+    for _ in 0..depth {
+        out.push_str(style.indent);
+    }
+}
+
+/// Re-emit an object property, recursing into its value.
+fn render_property(
+    property: &CstNode,
+    target: &Value,
+    style: Style,
+    depth: usize,
+    out: &mut String,
+) -> Result<()> {
+    let Some(prop) = property.as_object_prop() else {
+        out.push_str(&property.to_string());
+        return Ok(());
+    };
+    let (Some(name), Some(value_node)) = (prop.name(), prop.value()) else {
+        out.push_str(&property.to_string());
+        return Ok(());
+    };
+
+    // Normalise the separator too, so `"a":1` and `"a"  :  1` both come out
+    // as `"a": 1`. A loose (unquoted) name is re-emitted as written; JSON
+    // proper always has it quoted.
+    match (name.as_string_lit(), name.as_word_lit()) {
+        (Some(string_lit), _) => out.push_str(&string_lit.to_string()),
+        (_, Some(word_lit)) => out.push_str(&word_lit.to_string()),
+        _ => bail!("object property has no name"),
+    }
+    out.push_str(": ");
+    // The property itself sits at `depth + 1`, so its value's own children
+    // belong one level deeper again.
+    render_node(&value_node, target, style, depth + 1, out)
+}
+
+/// Detect the indentation a document already uses.
+///
+/// Mirrors what upstream `sort-package-json` does with `detect-indent` when
+/// it is handed a string: the file's own style wins unless the caller asks
+/// for something specific. Returns `None` for a document with no nested
+/// content to measure.
+pub fn detect_indent(file_text: &str) -> Option<(bool, u8)> {
+    let root = CstRootNode::parse(file_text, &ParseOptions::default()).ok()?;
+    let indent = root.single_indent_text()?;
+    if indent.starts_with('\t') {
+        Some((true, 1))
+    } else {
+        u8::try_from(indent.len()).ok().map(|width| (false, width))
+    }
+}
+
+/// A stable identity for an array element: the value serialised with every
+/// object's keys in sorted order, so reordering keys inside an element does
+/// not change it.
+fn canonical_key(value: &Value) -> String {
+    let mut out = String::new();
+    write_canonical(value, &mut out);
+    out
+}
+
+fn write_canonical(value: &Value, out: &mut String) {
+    match value {
+        Value::Object(map) => {
+            let mut keys: Vec<&String> = map.keys().collect();
+            keys.sort();
+            out.push('{');
+            for (index, key) in keys.into_iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                out.push_str(&serde_json::to_string(key).unwrap_or_default());
+                out.push(':');
+                write_canonical(&map[key], out);
+            }
+            out.push('}');
+        }
+        Value::Array(items) => {
+            out.push('[');
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                write_canonical(item, out);
+            }
+            out.push(']');
+        }
+        other => out.push_str(&serde_json::to_string(other).unwrap_or_default()),
+    }
+}
+
+fn resolve_indent(config: &Configuration) -> String {
+    if config.use_tabs {
+        "\t".to_string()
+    } else {
+        " ".repeat(config.indent_width as usize)
+    }
+}
+
+fn resolve_newline(kind: NewLineKind, file_text: &str) -> &'static str {
+    match kind {
+        NewLineKind::LineFeed => "\n",
+        NewLineKind::CarriageReturnLineFeed => "\r\n",
+        NewLineKind::Auto => detect_newline(file_text),
+    }
+}
+
+/// Match the document's own line endings, defaulting to LF.
+///
+/// dprint defines `NewLineKind::Auto` in terms of the *last* newline in the
+/// file, so use that rather than the first.
+fn detect_newline(file_text: &str) -> &'static str {
+    match file_text.rfind('\n') {
+        Some(index) if index > 0 && file_text.as_bytes()[index - 1] == b'\r' => "\r\n",
+        _ => "\n",
+    }
 }
 
 #[cfg(test)]
@@ -589,12 +668,16 @@ mod tests {
             ..Configuration::default()
         };
 
+        let mut host_calls = 0;
         let out = format_text_with_host(Path::new("package.json"), input, &config, |text| {
-            assert_eq!(text, input);
+            host_calls += 1;
+            // The host is handed our formatted text, not the raw input.
+            assert_eq!(text, expected);
             Ok(Some(expected.to_string()))
         })
         .unwrap();
 
+        assert_eq!(host_calls, 1, "the host must be consulted");
         assert_eq!(out.as_deref(), Some(expected));
     }
 
@@ -694,5 +777,288 @@ mod tests {
             "}\n"
         );
         assert_eq!(fmt(input), expected);
+    }
+
+    /// Format with an explicit config (`fmt` uses tabs).
+    fn fmt_with(input: &str, config: &Configuration) -> String {
+        format_text(Path::new("package.json"), input, config)
+            .unwrap()
+            .unwrap_or_else(|| input.to_string())
+    }
+
+    /// Two-space indentation, the default style.
+    fn spaces() -> Configuration {
+        Configuration::default()
+    }
+
+    #[test]
+    fn accepts_comments_instead_of_erroring() {
+        let input = "{\n  // leading\n  \"version\": \"1.0.0\",\n  \"name\": \"x\"\n}\n";
+        let out = fmt(input);
+        assert!(out.contains("// leading"), "comment must survive: {out:?}");
+    }
+
+    #[test]
+    fn comment_travels_with_its_property() {
+        let input = concat!(
+            "{\n",
+            "  // about version\n",
+            "  \"version\": \"1.0.0\",\n",
+            "  \"name\": \"x\"\n",
+            "}\n",
+        );
+        let expected = concat!(
+            "{\n",
+            "  \"name\": \"x\",\n",
+            "  // about version\n",
+            "  \"version\": \"1.0.0\"\n",
+            "}\n",
+        );
+        assert_eq!(fmt_with(input, &spaces()), expected);
+    }
+
+    #[test]
+    fn trailing_comment_stays_on_its_property() {
+        let input = concat!(
+            "{\n",
+            "  \"version\": \"1.0.0\", // pinned\n",
+            "  \"name\": \"x\"\n",
+            "}\n",
+        );
+        let out = fmt(input);
+        let name_line = out.lines().position(|l| l.contains("\"name\""));
+        let pinned_line = out.lines().position(|l| l.contains("// pinned"));
+        assert!(
+            name_line < pinned_line,
+            "comment should follow version: {out:?}"
+        );
+        assert!(
+            out.contains("\"version\": \"1.0.0\" // pinned")
+                || out.contains("\"version\": \"1.0.0\", // pinned"),
+            "trailing comment must stay on the same line: {out:?}"
+        );
+    }
+
+    #[test]
+    fn trailing_comma_is_dropped() {
+        let input = "{\n  \"version\": \"1.0.0\",\n  \"name\": \"x\",\n}\n";
+        let out = fmt(input);
+        assert!(!out.contains(",\n}"), "trailing comma must go: {out:?}");
+        assert!(out.contains("\"name\""), "content preserved: {out:?}");
+    }
+
+    #[test]
+    fn normalize_applies_indent_width() {
+        let input = "{\n      \"name\": \"x\",\n            \"version\": \"1.0.0\"\n}\n";
+        let config = Configuration {
+            indent_width: 2,
+            ..Configuration::default()
+        };
+        let expected = "{\n  \"name\": \"x\",\n  \"version\": \"1.0.0\"\n}\n";
+        assert_eq!(fmt_with(input, &config), expected);
+    }
+
+    #[test]
+    fn normalize_applies_tabs() {
+        let input = "{\n    \"name\": \"x\",\n    \"version\": \"1.0.0\"\n}\n";
+        let config = Configuration {
+            use_tabs: true,
+            ..Configuration::default()
+        };
+        let expected = "{\n\t\"name\": \"x\",\n\t\"version\": \"1.0.0\"\n}\n";
+        assert_eq!(fmt_with(input, &config), expected);
+    }
+
+    #[test]
+    fn a_one_line_object_stays_on_one_line() {
+        // dprint-plugin-json keeps a container's shape; so do we, so a
+        // deliberate one-liner is not blown open.
+        let input = "{\n \"name\": \"x\",\n \"dependencies\": {\"b\":\"1\",\"a\":\"1\"}\n}\n";
+        let expected = concat!(
+            "{\n",
+            "  \"name\": \"x\",\n",
+            "  \"dependencies\": { \"a\": \"1\", \"b\": \"1\" }\n",
+            "}\n",
+        );
+        assert_eq!(fmt_with(input, &spaces()), expected);
+    }
+
+    #[test]
+    fn a_multiline_object_stays_expanded_and_is_reindented() {
+        let input = concat!(
+            "{\n",
+            "        \"name\": \"x\",\n",
+            "        \"dependencies\": {\n",
+            "                    \"b\": \"1\",\n",
+            "          \"a\": \"1\"\n",
+            "        }\n",
+            "}\n",
+        );
+        let expected = concat!(
+            "{\n",
+            "  \"name\": \"x\",\n",
+            "  \"dependencies\": {\n",
+            "    \"a\": \"1\",\n",
+            "    \"b\": \"1\"\n",
+            "  }\n",
+            "}\n",
+        );
+        assert_eq!(fmt_with(input, &spaces()), expected);
+    }
+
+    #[test]
+    fn a_one_line_array_stays_tight() {
+        let input = "{\n  \"name\": \"x\",\n  \"bundledDependencies\": [\"b\",\"a\"]\n}\n";
+        let expected = "{\n  \"name\": \"x\",\n  \"bundledDependencies\": [\"a\", \"b\"]\n}\n";
+        assert_eq!(fmt_with(input, &spaces()), expected);
+    }
+
+    #[test]
+    fn normalize_keeps_comments() {
+        let input = "{\n        // note\n        \"name\": \"x\"\n}\n";
+        let out = fmt_with(input, &spaces());
+        assert_eq!(out, "{\n  // note\n  \"name\": \"x\"\n}\n");
+    }
+
+    #[test]
+    fn normalize_is_idempotent() {
+        let input = "{\n   \"version\": \"1.0.0\",\n  \"name\": \"x\"\n}\n";
+        let config = Configuration::default();
+        let once = fmt_with(input, &config);
+        let twice = fmt_with(&once, &config);
+        assert_eq!(once, twice, "second pass must not change output");
+    }
+
+    #[test]
+    fn host_declining_falls_back_to_normalizing() {
+        // This is the DX regression: with no JSON plugin configured,
+        // package.json used to come out sorted but unformatted.
+        let input = "{\n      \"version\": \"1.0.0\",\n            \"name\": \"x\"\n}\n";
+        let out = format_text_with_host(
+            Path::new("package.json"),
+            input,
+            &Configuration::default(),
+            |_| Ok(None),
+        )
+        .unwrap();
+        assert_eq!(
+            out.as_deref(),
+            Some("{\n  \"name\": \"x\",\n  \"version\": \"1.0.0\"\n}\n")
+        );
+    }
+
+    #[test]
+    fn crlf_is_preserved_when_normalizing() {
+        let input = "{\r\n   \"version\": \"1.0.0\",\r\n  \"name\": \"x\"\r\n}\r\n";
+        let config = Configuration {
+            new_line_kind: NewLineKind::Auto,
+            ..Configuration::default()
+        };
+        let out = fmt_with(input, &config);
+        assert!(out.contains("\r\n"), "CRLF must be kept: {out:?}");
+        assert!(!out.contains("\n\n"), "no stray bare LF: {out:?}");
+    }
+
+    #[test]
+    fn array_elements_keep_identity_when_their_own_keys_move() {
+        // A `wireit` dependency object is reordered *inside* the array
+        // element, which must not stop the element being matched to its
+        // source node.
+        let input = concat!(
+            "{\n",
+            "  \"wireit\": {\n",
+            "    \"test\": {\n",
+            "      \"dependencies\": [\n",
+            "        { \"cascade\": false, \"script\": \"build\" },\n",
+            "        \"lint\"\n",
+            "      ]\n",
+            "    }\n",
+            "  }\n",
+            "}\n",
+        );
+        let out = fmt_with(input, &spaces());
+        assert!(
+            out.contains("{ \"script\": \"build\", \"cascade\": false }"),
+            "element keys should reorder in place: {out:?}"
+        );
+        assert!(out.contains("\"lint\""), "sibling element kept: {out:?}");
+    }
+
+    #[test]
+    fn duplicate_keys_are_preserved_not_dropped() {
+        // JSONC allows duplicates and the parsed value keeps only the last;
+        // dropping the others would lose content the user wrote.
+        let input = "{\n  \"name\": \"x\",\n  \"name\": \"y\",\n  \"version\": \"1\"\n}\n";
+        let out = fmt_with(input, &spaces());
+        assert_eq!(out.matches("\"name\"").count(), 2, "both kept: {out:?}");
+        assert!(out.contains("\"x\""), "first value kept: {out:?}");
+        assert!(out.contains("\"y\""), "second value kept: {out:?}");
+        // Still sorted: name before version.
+        assert!(
+            out.find("\"name\"") < out.find("\"version\""),
+            "still sorted: {out:?}"
+        );
+    }
+
+    #[test]
+    fn duplicate_keys_survive_a_round_trip() {
+        let input = "{\n  \"name\": \"x\",\n  \"name\": \"y\"\n}\n";
+        let once = fmt_with(input, &spaces());
+        let twice = fmt_with(&once, &spaces());
+        assert_eq!(once, twice, "must be idempotent with duplicates");
+    }
+
+    #[test]
+    fn line_endings_are_never_mixed() {
+        // CRLF document formatted with an explicit LF setting: the trivia
+        // outside the root used to keep its CRLF, producing a mixed file.
+        let input = "{\r\n  \"version\": \"1\",\r\n  \"name\": \"x\"\r\n}\r\n";
+        let lf = fmt_with(
+            input,
+            &Configuration {
+                new_line_kind: NewLineKind::LineFeed,
+                ..Configuration::default()
+            },
+        );
+        assert!(!lf.contains('\r'), "no CR should survive: {lf:?}");
+
+        let crlf = fmt_with(
+            input,
+            &Configuration {
+                new_line_kind: NewLineKind::CarriageReturnLineFeed,
+                ..Configuration::default()
+            },
+        );
+        assert_eq!(
+            crlf.matches("\r\n").count(),
+            crlf.matches('\n').count(),
+            "every newline should be CRLF: {crlf:?}"
+        );
+    }
+
+    #[test]
+    fn block_comment_line_endings_are_normalized() {
+        let input = "{\r\n  /* one\r\n     two */\r\n  \"name\": \"x\"\r\n}\r\n";
+        let out = fmt_with(
+            input,
+            &Configuration {
+                new_line_kind: NewLineKind::LineFeed,
+                ..Configuration::default()
+            },
+        );
+        assert!(
+            !out.contains('\r'),
+            "CR inside a block comment too: {out:?}"
+        );
+    }
+
+    #[test]
+    fn number_and_string_spelling_is_preserved() {
+        // The scalar guard must not reformat values the sort left alone.
+        let input =
+            "{\n  \"version\": \"1.0\",\n  \"a\": 1.50,\n  \"b\": 1e3,\n  \"name\": \"x\"\n}\n";
+        let out = fmt_with(input, &spaces());
+        assert!(out.contains("1.50"), "number spelling kept: {out:?}");
+        assert!(out.contains("1e3"), "exponent spelling kept: {out:?}");
     }
 }

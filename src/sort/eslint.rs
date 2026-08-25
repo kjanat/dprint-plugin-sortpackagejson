@@ -15,7 +15,10 @@ use std::cmp::Ordering;
 
 use serde_json::{Map, Value};
 
-use super::helpers::{map_object_array, sort_object_alpha, sort_object_by_keys};
+use super::{
+    collate::compare_locale,
+    helpers::{map_object_array, sort_object_alpha, sort_object_by_keys},
+};
 use crate::configuration::Configuration;
 
 const ESLINT_CONFIG_ORDER: &[&str] = &[
@@ -75,7 +78,8 @@ fn sort_rules(map: Map<String, Value>) -> Map<String, Value> {
         let a_slashes = a.0.bytes().filter(|&b| b == b'/').count();
         let b_slashes = b.0.bytes().filter(|&b| b == b'/').count();
         match a_slashes.cmp(&b_slashes) {
-            Ordering::Equal => a.0.cmp(&b.0),
+            // Upstream tie-breaks with `localeCompare` (index.js:220).
+            Ordering::Equal => compare_locale(&a.0, &b.0),
             other => other,
         }
     });
