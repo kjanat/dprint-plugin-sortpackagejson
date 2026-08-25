@@ -10,8 +10,9 @@
 		"prepack": "bun run --filter '*' prepack",
 		"test": "bun run --filter '*' test"
 	},
+	"packageManager": "bun@1.4.0",
 	"devDependencies": {
-		"semver": "7.7.3",
+		"semver": "^7.8.5",
 		"sort-package-json": "4.0.0"
 	},
 	"volta": {

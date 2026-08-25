@@ -1,7 +1,7 @@
 // Dev-time generator for tests/fixtures/semver_min.txt — ground truth for
 // src/sort/semver_min.rs, taken from node-semver's own minVersion.
-// Needs node-semver, which is not a project dependency; run it as:
-//   npx --yes --package=semver node scripts/gen_semver_fixture.mjs
+// semver is a devDependency of the workspace root, so after `bun install`:
+//   node scripts/gen_semver_fixture.mjs
 import { writeFileSync } from "node:fs";
 import minVersion from "semver/ranges/min-version.js";
 
@@ -59,6 +59,16 @@ const RANGES = [
 	"1.0.0-alpha.beta",
 	"1.0.0-rc.1",
 	"1.0.0-0",
+	// node-semver tolerates whitespace between an operator and its operand;
+	// these guard the reattachment in group_lower_bound.
+	"> 1.0.0",
+	">= 1.0.0",
+	"< 2.0.0",
+	"<= 2.0.0",
+	"^ 1.2.3",
+	"~ 1.2",
+	">=  2",
+	"1.2.3   -   2.0.0",
 ];
 
 const lines = RANGES.map((range) => {
