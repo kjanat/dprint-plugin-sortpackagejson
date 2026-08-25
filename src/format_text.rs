@@ -158,9 +158,19 @@ fn render_node(
             render_array(&array.into(), target_array, style, depth, out)
         }
         // Scalars, and any shape the sort did not change, come through as
-        // their original text.
+        // their original text — which keeps number and string spelling
+        // exactly as written. If a pass ever does rewrite a value, emitting
+        // the source text would silently discard it, so fall back to the
+        // sorted value whenever the two disagree.
         _ => {
-            out.push_str(&node.to_string());
+            let unchanged = node
+                .to_serde_value()
+                .is_some_and(|value| canonical_key(&value) == canonical_key(target));
+            if unchanged {
+                out.push_str(&node.to_string());
+            } else {
+                out.push_str(&serde_json::to_string(target)?);
+            }
             Ok(())
         }
     }
@@ -1040,5 +1050,15 @@ mod tests {
             !out.contains('\r'),
             "CR inside a block comment too: {out:?}"
         );
+    }
+
+    #[test]
+    fn number_and_string_spelling_is_preserved() {
+        // The scalar guard must not reformat values the sort left alone.
+        let input =
+            "{\n  \"version\": \"1.0\",\n  \"a\": 1.50,\n  \"b\": 1e3,\n  \"name\": \"x\"\n}\n";
+        let out = fmt_with(input, &spaces());
+        assert!(out.contains("1.50"), "number spelling kept: {out:?}");
+        assert!(out.contains("1e3"), "exponent spelling kept: {out:?}");
     }
 }

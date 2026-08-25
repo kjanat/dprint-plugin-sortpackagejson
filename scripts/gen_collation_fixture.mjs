@@ -35,9 +35,12 @@ const REAL_NAMES = [
 	"aws-sdk",
 ];
 
-// Deterministic PRNG so the fixture is reproducible.
+// Deterministic PRNG so the fixture is reproducible. Math.imul keeps the
+// multiply in 32-bit integer space: seed * 1103515245 overflows the 53-bit
+// float mantissa, and the rounding that follows collapses the state space to
+// roughly half its period, which quietly narrows the corpus.
 let seed = 0x2f6e2b1;
-const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+const rnd = () => ((seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) / 0x80000000);
 const word = () => {
 	let s = "";
 	const len = 1 + Math.floor(rnd() * 6);
